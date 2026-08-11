@@ -1,10 +1,10 @@
 package com.saibao.invoice.integration.dingtalk;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.saibao.invoice.config.DingTalkProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import tools.jackson.databind.JsonNode;
 
 import java.time.Instant;
 import java.util.ArrayDeque;
