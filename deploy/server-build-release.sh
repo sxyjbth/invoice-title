@@ -12,7 +12,7 @@ PNPM_HOME="${INVOICE_PNPM_HOME:-${APP_HOME}/runtime/pnpm}"
 MAVEN_HOME="${INVOICE_MAVEN_HOME:-${APP_HOME}/runtime/maven}"
 PNPM_STORE="${APP_HOME}/runtime/pnpm-store"
 MAVEN_REPOSITORY="${APP_HOME}/runtime/maven-repository"
-JAVA_HOME="${INVOICE_JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"
+JAVA_HOME="${INVOICE_JAVA_HOME:-${APP_HOME}/runtime/jdk-21}"
 
 export PATH="${NODE_HOME}/bin:${PNPM_HOME}/node_modules/.bin:${MAVEN_HOME}/bin:${PATH}"
 export JAVA_HOME
@@ -20,7 +20,7 @@ export JAVA_HOME
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
 export MAVEN_OPTS="${MAVEN_OPTS:--Xms128m -Xmx768m}"
 
-[[ -x "${JAVA_HOME}/bin/java" ]] || {
+[[ -x "${JAVA_HOME}/bin/java" && -x "${JAVA_HOME}/bin/javac" ]] || {
     echo "Java 21 不可用: ${JAVA_HOME}" >&2
     exit 1
 }
