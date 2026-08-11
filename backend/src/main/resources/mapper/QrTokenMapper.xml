@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.saibao.invoice.mapper.QrTokenMapper">
+    <insert id="insert" parameterType="com.saibao.invoice.domain.QrToken" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO invoice_qr_token (token, title_id, version_id, employee_id, expires_at, created_at)
+        VALUES (#{token}, #{titleId}, #{versionId}, #{employeeId}, #{expiresAt}, #{createdAt})
+    </insert>
+
+    <select id="selectByToken" resultType="com.saibao.invoice.domain.QrToken">
+        SELECT id, token, title_id, version_id, employee_id, ding_user_id, expires_at, created_at
+        FROM invoice_qr_token WHERE token = #{token}
+    </select>
+</mapper>

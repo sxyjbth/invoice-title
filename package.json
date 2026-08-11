@@ -1,0 +1,12 @@
+{
+  "name": "invoice-title",
+  "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "dev:employee": "pnpm --filter @invoice-title/employee-h5 dev",
+    "dev:admin": "pnpm --filter @invoice-title/finance-admin dev",
+    "test:frontend": "pnpm --recursive --if-present test",
+    "build:frontend": "pnpm --recursive --if-present build"
+  }
+}
+

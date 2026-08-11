@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.saibao.invoice.mapper.OperationLogMapper">
+    <sql id="conditions">
+        WHERE 1 = 1
+        <if test="moduleType != null and moduleType != ''">AND module_type = #{moduleType}</if>
+        <if test="operationType != null and operationType != ''">AND operation_type = #{operationType}</if>
+        <if test="result != null and result != ''">AND result = #{result}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (LOWER(business_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                OR LOWER(operator_name) LIKE CONCAT('%', LOWER(#{keyword}), '%'))
+        </if>
+    </sql>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM invoice_operation_log <include refid="conditions"/>
+    </select>
+
+    <select id="selectPage" resultType="com.saibao.invoice.domain.OperationLog">
+        SELECT id, module_type, operation_type, business_id, business_name, detail_json, result,
+               operator_user_id, operator_name, client_ip, created_at
+        FROM invoice_operation_log
+        <include refid="conditions"/>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <insert id="insert" parameterType="com.saibao.invoice.domain.OperationLog" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO invoice_operation_log
+        (module_type, operation_type, business_id, business_name, detail_json, result,
+         operator_user_id, operator_name, client_ip, created_at)
+        VALUES (#{moduleType}, #{operationType}, #{businessId}, #{businessName}, #{detailJson}, #{result},
+                #{operatorUserId}, #{operatorName}, #{clientIp}, #{createdAt})
+    </insert>
+</mapper>

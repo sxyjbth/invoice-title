@@ -1,0 +1,31 @@
+{
+  "name": "@invoice-title/employee-h5",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 24173 --strictPort",
+    "build": "vue-tsc --noEmit && vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "2.3.2",
+    "axios": "1.19.0",
+    "dingtalk-jsapi": "3.2.9",
+    "element-plus": "2.14.4",
+    "pinia": "4.0.2",
+    "qrcode": "1.5.4",
+    "vue": "3.5.41",
+    "vue-router": "5.2.0"
+  },
+  "devDependencies": {
+    "@types/qrcode": "1.5.6",
+    "@vitejs/plugin-vue": "6.0.8",
+    "@vue/test-utils": "2.4.11",
+    "happy-dom": "20.11.2",
+    "typescript": "5.9.3",
+    "vite": "8.2.1",
+    "vitest": "4.1.10",
+    "vue-tsc": "3.2.2"
+  }
+}

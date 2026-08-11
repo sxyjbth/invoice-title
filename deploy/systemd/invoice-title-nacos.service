@@ -1,0 +1,27 @@
+[Unit]
+Description=Invoice Title Nacos Standalone Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=invoice_title
+Group=invoice_title
+WorkingDirectory=/opt/invoice-title/runtime/nacos
+Environment=JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+Environment=MODE=standalone
+Environment=NACOS_SERVER_PORT=28848
+Environment=NACOS_BIND_IP=127.0.0.1
+ExecStartPre=/usr/bin/test -r /opt/invoice-title/runtime/nacos/target/nacos-server.jar
+ExecStart=/usr/lib/jvm/java-21-openjdk-amd64/bin/java -Xms256m -Xmx512m -Xmn128m -XX:+ExitOnOutOfMemoryError -Dnacos.standalone=true -Dnacos.deployment.type=server -Dnacos.home=/opt/invoice-title/runtime/nacos -Dloader.path=/opt/invoice-title/runtime/nacos/plugins,/opt/invoice-title/runtime/nacos/plugins/health,/opt/invoice-title/runtime/nacos/plugins/cmdb,/opt/invoice-title/runtime/nacos/plugins/selector --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED -jar /opt/invoice-title/runtime/nacos/target/nacos-server.jar --spring.config.additional-location=file:/opt/invoice-title/runtime/nacos/conf/ --logging.config=/opt/invoice-title/runtime/nacos/conf/nacos-logback.xml --server.address=${NACOS_BIND_IP} --nacos.server.main.port=${NACOS_SERVER_PORT} --nacos.inetutils.ip-address=${NACOS_BIND_IP} --server.max-http-request-header-size=524288
+Restart=on-failure
+RestartSec=8
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+.runtime/
+.idea/
+.vscode/
+node_modules/
+dist/
+coverage/
+target/
+*.log
+*.pid
+.env.local
+__pycache__/
+*.py[cod]

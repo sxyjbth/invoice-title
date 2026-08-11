@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.saibao.invoice.mapper.EmployeeInvoiceTitleMapper">
+    <!-- 员工级规则优先级：个人拒绝 > 个人允许 > 全员可见/部门允许。所有规则均匹配企业业务编码。 -->
+    <sql id="effectiveSubjectPermission">
+        AND current_employee.status = 'ACTIVE'
+        AND NOT EXISTS (
+            SELECT 1 FROM subject_permission denied
+            WHERE denied.subject_id = s.id
+              AND denied.target_type = 'USER'
+              AND denied.target_corp_code = current_employee.corp_code
+              AND denied.target_id = current_employee.ding_user_id
+              AND denied.permission_effect = 'DENY'
+              AND denied.status = 'ENABLED' AND denied.deleted = 0
+        )
+        AND (
+            EXISTS (
+                SELECT 1 FROM subject_permission allowed_user
+                WHERE allowed_user.subject_id = s.id
+                  AND allowed_user.target_type = 'USER'
+                  AND allowed_user.target_corp_code = current_employee.corp_code
+                  AND allowed_user.target_id = current_employee.ding_user_id
+                  AND allowed_user.permission_effect = 'ALLOW'
+                  AND allowed_user.status = 'ENABLED' AND allowed_user.deleted = 0
+            )
+            OR s.all_employee_visible = 1
+            OR EXISTS (
+                SELECT 1
+                FROM subject_permission allowed_department
+                INNER JOIN ding_employee_department employee_department
+                  ON employee_department.employee_id = current_employee.id
+                INNER JOIN ding_department department_directory
+                  ON department_directory.id = employee_department.department_id
+                 AND department_directory.status = 'ENABLED'
+                WHERE allowed_department.subject_id = s.id
+                  AND allowed_department.target_type = 'DEPARTMENT'
+                  AND allowed_department.target_corp_code = department_directory.corp_code
+                  AND allowed_department.target_id = department_directory.ding_department_id
+                  AND allowed_department.permission_effect = 'ALLOW'
+                  AND allowed_department.status = 'ENABLED'
+                  AND allowed_department.deleted = 0
+            )
+        )
+    </sql>
+
+    <sql id="authorizedConditions">
+        WHERE t.deleted = 0 AND t.status = 'PUBLISHED'
+        <if test="query.subjectId != null">AND its.subject_id = #{query.subjectId}</if>
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (LOWER(t.company_name) LIKE CONCAT('%', LOWER(#{query.keyword}), '%')
+                OR LOWER(t.taxpayer_id) LIKE CONCAT('%', LOWER(#{query.keyword}), '%'))
+        </if>
+        <include refid="effectiveSubjectPermission"/>
+    </sql>
+
+    <select id="countAuthorized" resultType="long">
+        SELECT COUNT(DISTINCT t.id)
+        FROM invoice_title t
+        INNER JOIN invoice_title_subject its ON its.title_id = t.id
+        INNER JOIN invoice_subject s ON s.id = its.subject_id AND s.status = 'ENABLED' AND s.deleted = 0
+        INNER JOIN ding_employee current_employee ON current_employee.id = #{employeeId}
+        <include refid="authorizedConditions"/>
+    </select>
+
+    <select id="selectAuthorizedPage" resultType="com.saibao.invoice.domain.InvoiceTitle">
+        SELECT DISTINCT t.id, t.company_name, t.taxpayer_id, t.registered_address, t.phone,
+               t.bank_name, t.bank_account, t.status, t.subject_names, t.updated_at, t.updated_by
+        FROM invoice_title t
+        INNER JOIN invoice_title_subject its ON its.title_id = t.id
+        INNER JOIN invoice_subject s ON s.id = its.subject_id AND s.status = 'ENABLED' AND s.deleted = 0
+        INNER JOIN ding_employee current_employee ON current_employee.id = #{employeeId}
+        <include refid="authorizedConditions"/>
+        ORDER BY t.updated_at DESC, t.id DESC
+        LIMIT #{query.pageSize} OFFSET #{query.offset}
+    </select>
+
+    <select id="hasTitleAccess" resultType="boolean">
+        SELECT CASE WHEN COUNT(*) &gt; 0 THEN TRUE ELSE FALSE END
+        FROM invoice_title_subject its
+        INNER JOIN invoice_subject s ON s.id = its.subject_id AND s.status = 'ENABLED' AND s.deleted = 0
+        INNER JOIN ding_employee current_employee ON current_employee.id = #{employeeId}
+        WHERE its.title_id = #{titleId}
+        <include refid="effectiveSubjectPermission"/>
+    </select>
+</mapper>

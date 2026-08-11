@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.saibao.invoice.mapper.FinanceUserMapper">
+    <sql id="columns">id, username, display_name, password_hash, role_type, status,
+        password_changed_at, last_login_at, created_by, created_at, updated_by, updated_at</sql>
+
+    <select id="selectById" resultType="com.saibao.invoice.domain.FinanceUser">
+        SELECT <include refid="columns"/> FROM finance_user WHERE id = #{id} AND deleted = 0
+    </select>
+
+    <select id="selectByUsername" resultType="com.saibao.invoice.domain.FinanceUser">
+        SELECT <include refid="columns"/> FROM finance_user
+        WHERE LOWER(username) = LOWER(#{username}) AND deleted = 0
+    </select>
+
+    <select id="countSuperAdministrators" resultType="long">
+        SELECT COUNT(*) FROM finance_user WHERE role_type = 'SUPER_ADMIN' AND deleted = 0
+    </select>
+
+    <sql id="financeAccountConditions">
+        WHERE role_type = 'FINANCE' AND deleted = 0
+        <if test="status != null and status != ''">AND status = #{status}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (LOWER(username) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                OR LOWER(display_name) LIKE CONCAT('%', LOWER(#{keyword}), '%'))
+        </if>
+    </sql>
+
+    <select id="countFinanceAccounts" resultType="long">
+        SELECT COUNT(*) FROM finance_user <include refid="financeAccountConditions"/>
+    </select>
+
+    <select id="selectFinanceAccountPage" resultType="com.saibao.invoice.domain.FinanceUser">
+        SELECT <include refid="columns"/> FROM finance_user
+        <include refid="financeAccountConditions"/>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <insert id="insert" parameterType="com.saibao.invoice.domain.FinanceUser" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO finance_user
+        (username, display_name, password_hash, role_type, status, password_changed_at,
+         created_by, created_at, updated_by, updated_at, deleted)
+        VALUES
+        (#{username}, #{displayName}, #{passwordHash}, #{roleType}, #{status}, #{passwordChangedAt},
+         #{createdBy}, #{createdAt}, #{updatedBy}, #{updatedAt}, 0)
+    </insert>
+
+    <update id="updatePassword">
+        UPDATE finance_user SET password_hash = #{passwordHash}, password_changed_at = #{changedAt},
+            updated_by = #{updatedBy}, updated_at = #{changedAt}
+        WHERE id = #{id} AND deleted = 0 AND status = 'ENABLED'
+    </update>
+
+    <update id="updateLastLogin">
+        UPDATE finance_user SET last_login_at = #{lastLoginAt} WHERE id = #{id} AND deleted = 0
+    </update>
+
+    <update id="updateStatus">
+        UPDATE finance_user SET status = #{status}, updated_by = #{updatedBy}, updated_at = #{updatedAt}
+        WHERE id = #{id} AND role_type = 'FINANCE' AND deleted = 0
+    </update>
+</mapper>

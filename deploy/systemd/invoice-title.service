@@ -1,0 +1,24 @@
+[Unit]
+Description=Invoice Title Spring Boot Service
+After=network-online.target mysql.service redis-server.service invoice-title-nacos.service
+Wants=network-online.target invoice-title-nacos.service
+
+[Service]
+Type=simple
+User=invoice_title
+Group=invoice_title
+WorkingDirectory=/opt/invoice-title/current
+EnvironmentFile=/opt/invoice-title/config/invoice-title.env
+ExecStartPre=/usr/bin/test -r /opt/invoice-title/current/backend/invoice-title-service.jar
+ExecStart=/usr/lib/jvm/java-21-openjdk-amd64/bin/java -Xms256m -Xmx768m -XX:+ExitOnOutOfMemoryError -jar /opt/invoice-title/current/backend/invoice-title-service.jar --spring.profiles.active=prod --server.address=127.0.0.1 --server.port=28082
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.saibao.invoice.mapper.SubjectPermissionMapper">
+    <sql id="conditions">
+        WHERE p.deleted = 0
+        <if test="subjectId != null">AND p.subject_id = #{subjectId}</if>
+        <if test="targetType != null and targetType != ''">AND p.target_type = #{targetType}</if>
+        <if test="status != null and status != ''">AND p.status = #{status}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (LOWER(p.target_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                OR LOWER(p.target_id) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                OR LOWER(p.target_corp_code) LIKE CONCAT('%', LOWER(#{keyword}), '%'))
+        </if>
+    </sql>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM subject_permission p <include refid="conditions"/>
+    </select>
+
+    <select id="selectPage" resultType="com.saibao.invoice.domain.SubjectPermission">
+        SELECT p.id, p.subject_id, s.subject_name, p.target_type, p.target_corp_code, p.target_id, p.target_name,
+               p.permission_effect, p.include_child_departments, p.status, p.source, p.updated_at
+        FROM subject_permission p
+        INNER JOIN invoice_subject s ON s.id = p.subject_id
+        <include refid="conditions"/>
+        ORDER BY p.updated_at DESC, p.id DESC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <insert id="insert" parameterType="com.saibao.invoice.domain.SubjectPermission" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO subject_permission
+        (subject_id, target_type, target_corp_code, target_id, target_name, permission_effect,
+         include_child_departments, status, source, created_by, created_at, updated_by, updated_at, deleted)
+        VALUES (#{subjectId}, #{targetType}, #{targetCorpCode}, #{targetId}, #{targetName}, #{permissionEffect},
+                #{includeChildDepartments}, #{status}, #{source}, #{createdBy}, #{createdAt}, #{updatedBy}, #{updatedAt}, 0)
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE subject_permission SET status = #{status}, updated_by = #{updatedBy}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id} AND deleted = 0
+    </update>
+
+    <delete id="deleteBySubjectId">
+        DELETE FROM subject_permission WHERE subject_id = #{subjectId}
+    </delete>
+
+    <select id="selectProfileDepartments" resultType="com.saibao.invoice.vo.DingDepartmentVO">
+        SELECT d.id, d.corp_code, d.corp_name, d.ding_department_id, d.department_name,
+               d.parent_department_id, d.status,
+               (SELECT COUNT(*) FROM ding_employee e WHERE e.department_id = d.id AND e.status = 'ACTIVE') AS employee_count
+        FROM subject_permission p
+        INNER JOIN ding_department d
+          ON d.corp_code = p.target_corp_code
+         AND d.ding_department_id = p.target_id
+         AND d.status = 'ENABLED'
+        WHERE p.subject_id = #{subjectId} AND p.target_type = 'DEPARTMENT'
+          AND p.permission_effect = 'ALLOW' AND p.status = 'ENABLED' AND p.deleted = 0
+        ORDER BY d.corp_code ASC, d.sort_no ASC, d.id ASC
+    </select>
+
+    <select id="selectProfileEmployeeRules" resultType="com.saibao.invoice.vo.EmployeePermissionRuleVO">
+        SELECT e.id AS employee_id, e.corp_code, e.corp_name, e.ding_user_id, e.employee_no, e.employee_name,
+               e.department_name, e.mobile, p.permission_effect AS effect
+        FROM subject_permission p
+        INNER JOIN ding_employee e
+          ON e.corp_code = p.target_corp_code
+         AND e.ding_user_id = p.target_id
+         AND e.status = 'ACTIVE'
+        WHERE p.subject_id = #{subjectId} AND p.target_type = 'USER'
+          AND p.status = 'ENABLED' AND p.deleted = 0
+        ORDER BY e.corp_code ASC, e.employee_no ASC, e.id ASC
+    </select>
+
+    <select id="countEffectiveEmployees" resultType="long">
+        SELECT COUNT(*)
+        FROM ding_employee e
+        INNER JOIN invoice_subject s ON s.id = #{subjectId} AND s.deleted = 0 AND s.status = 'ENABLED'
+        WHERE e.status = 'ACTIVE'
+          AND NOT EXISTS (
+              SELECT 1 FROM subject_permission deny_rule
+              WHERE deny_rule.subject_id = s.id AND deny_rule.target_type = 'USER'
+                AND deny_rule.target_corp_code = e.corp_code AND deny_rule.target_id = e.ding_user_id
+                AND deny_rule.permission_effect = 'DENY'
+                AND deny_rule.status = 'ENABLED' AND deny_rule.deleted = 0
+          )
+          AND (
+              EXISTS (
+                  SELECT 1 FROM subject_permission allow_user
+                  WHERE allow_user.subject_id = s.id AND allow_user.target_type = 'USER'
+                    AND allow_user.target_corp_code = e.corp_code AND allow_user.target_id = e.ding_user_id
+                    AND allow_user.permission_effect = 'ALLOW'
+                    AND allow_user.status = 'ENABLED' AND allow_user.deleted = 0
+              )
+              OR s.all_employee_visible = 1
+              OR EXISTS (
+                  SELECT 1 FROM subject_permission allow_department
+                  INNER JOIN ding_employee_department employee_department ON employee_department.employee_id = e.id
+                  INNER JOIN ding_department d ON d.id = employee_department.department_id
+                  WHERE allow_department.subject_id = s.id AND allow_department.target_type = 'DEPARTMENT'
+                    AND allow_department.target_corp_code = d.corp_code
+                    AND allow_department.target_id = d.ding_department_id
+                    AND allow_department.permission_effect = 'ALLOW' AND allow_department.status = 'ENABLED'
+                    AND allow_department.deleted = 0 AND d.status = 'ENABLED'
+              )
+          )
+    </select>
+</mapper>

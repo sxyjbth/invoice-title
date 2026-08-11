@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.saibao.invoice.mapper.DingDirectoryMapper">
+    <!-- 最终权限优先级：个人关闭 > 个人启用 > 全员启用 > 部门启用 > 默认关闭。 -->
+    <sql id="effectiveEmployeePermission">
+        CASE
+            WHEN EXISTS (
+                SELECT 1 FROM subject_permission user_deny
+                WHERE user_deny.subject_id = #{subjectId}
+                  AND user_deny.target_type = 'USER'
+                  AND user_deny.target_corp_code = e.corp_code
+                  AND user_deny.target_id = e.ding_user_id
+                  AND user_deny.permission_effect = 'DENY'
+                  AND user_deny.status = 'ENABLED' AND user_deny.deleted = 0
+            ) THEN 0
+            WHEN EXISTS (
+                SELECT 1 FROM subject_permission user_allow
+                WHERE user_allow.subject_id = #{subjectId}
+                  AND user_allow.target_type = 'USER'
+                  AND user_allow.target_corp_code = e.corp_code
+                  AND user_allow.target_id = e.ding_user_id
+                  AND user_allow.permission_effect = 'ALLOW'
+                  AND user_allow.status = 'ENABLED' AND user_allow.deleted = 0
+            ) THEN 1
+            WHEN EXISTS (
+                SELECT 1 FROM invoice_subject s
+                WHERE s.id = #{subjectId} AND s.all_employee_visible = 1 AND s.deleted = 0
+            ) THEN 1
+            WHEN EXISTS (
+                SELECT 1 FROM subject_permission department_allow
+                INNER JOIN ding_employee_department employee_department
+                  ON employee_department.employee_id = e.id
+                INNER JOIN ding_department employee_department_directory
+                  ON employee_department_directory.id = employee_department.department_id
+                 AND employee_department_directory.status = 'ENABLED'
+                WHERE department_allow.subject_id = #{subjectId}
+                  AND department_allow.target_type = 'DEPARTMENT'
+                  AND department_allow.target_corp_code = employee_department_directory.corp_code
+                  AND department_allow.target_id = employee_department_directory.ding_department_id
+                  AND department_allow.permission_effect = 'ALLOW'
+                  AND department_allow.status = 'ENABLED' AND department_allow.deleted = 0
+            ) THEN 1
+            ELSE 0
+        END
+    </sql>
+
+    <sql id="employeeConditions">
+        WHERE e.status = 'ACTIVE'
+        <if test="departmentId != null">AND e.department_id = #{departmentId}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (LOWER(e.employee_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                OR LOWER(e.employee_no) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                OR LOWER(e.department_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                OR e.mobile LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="subjectId != null and permissionStatus != null and permissionStatus != ''">
+            AND (<include refid="effectiveEmployeePermission"/>) =
+            <choose><when test="permissionStatus == 'ENABLED'">1</when><otherwise>0</otherwise></choose>
+        </if>
+    </sql>
+
+    <select id="countEmployees" resultType="long">
+        SELECT COUNT(*)
+        FROM ding_employee e
+        LEFT JOIN ding_department d ON d.id = e.department_id
+        <include refid="employeeConditions"/>
+    </select>
+
+    <select id="selectEmployeePage" resultType="com.saibao.invoice.domain.DingEmployee">
+        SELECT e.id, e.corp_code, e.corp_name, e.corp_id, e.ding_user_id, e.employee_no, e.employee_name, e.department_id,
+               e.department_name, e.mobile, e.status,
+               <choose>
+                   <when test="subjectId != null"><include refid="effectiveEmployeePermission"/></when>
+                   <otherwise>NULL</otherwise>
+               </choose> AS permission_enabled,
+               e.updated_at
+        FROM ding_employee e
+        LEFT JOIN ding_department d ON d.id = e.department_id
+        <include refid="employeeConditions"/>
+        ORDER BY e.employee_no ASC, e.id ASC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <select id="selectEmployeeByIdentity" resultType="com.saibao.invoice.domain.DingEmployee">
+        SELECT id, corp_code, corp_name, corp_id, ding_user_id, union_id, employee_no, employee_name, department_id, department_name,
+               mobile, status, last_synced_at, updated_at
+        FROM ding_employee
+        WHERE corp_code = #{corpCode} AND ding_user_id = #{dingUserId} AND status = 'ACTIVE'
+    </select>
+
+    <select id="selectActiveEmployeeById" resultType="com.saibao.invoice.domain.DingEmployee">
+        SELECT id, corp_code, corp_name, corp_id, ding_user_id, union_id, employee_no, employee_name, department_id, department_name,
+               mobile, status, last_synced_at, updated_at
+        FROM ding_employee WHERE id = #{id} AND status = 'ACTIVE'
+    </select>
+
+    <select id="selectEmployeesByIds" resultType="com.saibao.invoice.domain.DingEmployee">
+        SELECT id, corp_code, corp_name, corp_id, ding_user_id, employee_no, employee_name, department_id, department_name, mobile, status, updated_at
+        FROM ding_employee
+        WHERE status = 'ACTIVE' AND id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY employee_no ASC, id ASC
+    </select>
+
+    <sql id="departmentConditions">
+        WHERE d.status = 'ENABLED'
+        <if test="keyword != null and keyword != ''">
+            AND LOWER(d.department_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+        </if>
+    </sql>
+
+    <select id="countDepartments" resultType="long">
+        SELECT COUNT(*) FROM ding_department d <include refid="departmentConditions"/>
+    </select>
+
+    <select id="selectDepartmentPage" resultType="com.saibao.invoice.domain.DingDepartment">
+        SELECT d.id, d.corp_code, d.corp_name, d.corp_id, d.ding_department_id, d.department_name, d.parent_department_id, d.status, d.sort_no,
+               (SELECT COUNT(DISTINCT e.id) FROM ding_employee_department ed
+                INNER JOIN ding_employee e ON e.id = ed.employee_id AND e.status = 'ACTIVE'
+                WHERE ed.department_id = d.id) AS employee_count,
+               d.updated_at
+        FROM ding_department d
+        <include refid="departmentConditions"/>
+        ORDER BY d.sort_no ASC, d.id ASC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <select id="selectDepartmentsByIds" resultType="com.saibao.invoice.domain.DingDepartment">
+        SELECT d.id, d.corp_code, d.corp_name, d.corp_id, d.ding_department_id, d.department_name, d.parent_department_id, d.status, d.sort_no,
+               (SELECT COUNT(DISTINCT e.id) FROM ding_employee_department ed
+                INNER JOIN ding_employee e ON e.id = ed.employee_id AND e.status = 'ACTIVE'
+                WHERE ed.department_id = d.id) AS employee_count,
+               d.updated_at
+        FROM ding_department d
+        WHERE d.status = 'ENABLED' AND d.id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY d.sort_no ASC, d.id ASC
+    </select>
+
+    <select id="selectDepartmentByDingId" resultType="com.saibao.invoice.domain.DingDepartment">
+        SELECT id, corp_code, corp_name, corp_id, ding_department_id, department_name, parent_department_id, status, sort_no,
+               last_synced_at, updated_at
+        FROM ding_department WHERE corp_code = #{corpCode} AND ding_department_id = #{dingDepartmentId}
+    </select>
+
+    <insert id="insertDepartment" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ding_department
+        (corp_code, corp_name, corp_id, ding_department_id, department_name, parent_department_id, status, sort_no, last_synced_at,
+         created_at, updated_at)
+        VALUES
+        (#{corpCode}, #{corpName}, #{corpId}, #{dingDepartmentId}, #{departmentName}, #{parentDepartmentId}, #{status}, #{sortNo},
+         #{lastSyncedAt}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    </insert>
+
+    <update id="updateDepartment">
+        UPDATE ding_department
+        SET corp_name = #{corpName}, corp_id = #{corpId}, department_name = #{departmentName}, parent_department_id = #{parentDepartmentId},
+            status = #{status}, sort_no = #{sortNo}, last_synced_at = #{lastSyncedAt}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+
+    <update id="disableDepartmentsNotIn">
+        UPDATE ding_department SET status = 'DISABLED', updated_at = CURRENT_TIMESTAMP
+        <choose>
+            <when test="dingDepartmentIds != null and !dingDepartmentIds.isEmpty()">
+                WHERE corp_code = #{corpCode} AND ding_department_id NOT IN
+                <foreach collection="dingDepartmentIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </when>
+            <otherwise>WHERE corp_code = #{corpCode}</otherwise>
+        </choose>
+    </update>
+
+    <select id="selectAnyEmployeeByIdentity" resultType="com.saibao.invoice.domain.DingEmployee">
+        SELECT id, corp_code, corp_name, corp_id, ding_user_id, union_id, employee_no, employee_name, department_id, department_name,
+               mobile, status, last_synced_at, updated_at
+        FROM ding_employee WHERE corp_code = #{corpCode} AND ding_user_id = #{dingUserId}
+    </select>
+
+    <insert id="insertEmployee" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ding_employee
+        (corp_code, corp_name, corp_id, ding_user_id, union_id, employee_no, employee_name, department_id, department_name, mobile,
+         status, last_synced_at, created_at, updated_at)
+        VALUES
+        (#{corpCode}, #{corpName}, #{corpId}, #{dingUserId}, #{unionId}, #{employeeNo}, #{employeeName}, #{departmentId}, #{departmentName},
+         #{mobile}, #{status}, #{lastSyncedAt}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    </insert>
+
+    <update id="updateEmployee">
+        UPDATE ding_employee
+        SET corp_name = #{corpName}, corp_id = #{corpId}, union_id = #{unionId}, employee_no = #{employeeNo}, employee_name = #{employeeName},
+            department_id = #{departmentId}, department_name = #{departmentName}, mobile = #{mobile},
+            status = #{status}, last_synced_at = #{lastSyncedAt}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+
+    <update id="inactivateEmployeesNotIn">
+        UPDATE ding_employee SET status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP
+        <choose>
+            <when test="dingUserIds != null and !dingUserIds.isEmpty()">
+                WHERE corp_code = #{corpCode} AND ding_user_id NOT IN
+                <foreach collection="dingUserIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </when>
+            <otherwise>WHERE corp_code = #{corpCode}</otherwise>
+        </choose>
+    </update>
+
+    <delete id="deleteEmployeeDepartments">
+        DELETE FROM ding_employee_department WHERE employee_id = #{employeeId}
+    </delete>
+
+    <insert id="insertEmployeeDepartment">
+        INSERT INTO ding_employee_department (employee_id, department_id, is_primary, created_at, updated_at)
+        VALUES (#{employeeId}, #{departmentId}, #{primary}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    </insert>
+
+    <insert id="insertSyncLog" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ding_directory_sync_log
+        (trigger_type, status, department_count, employee_count, operator_name, error_message, started_at, finished_at)
+        VALUES
+        (#{triggerType}, #{status}, #{departmentCount}, #{employeeCount}, #{operatorName}, #{errorMessage},
+         #{startedAt}, #{finishedAt})
+    </insert>
+
+    <update id="finishSyncLog">
+        UPDATE ding_directory_sync_log
+        SET status = #{status}, department_count = #{departmentCount}, employee_count = #{employeeCount},
+            error_message = #{errorMessage}, finished_at = #{finishedAt}
+        WHERE id = #{id}
+    </update>
+</mapper>

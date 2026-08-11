@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.saibao.invoice.mapper.InvoiceTitleMapper">
+    <sql id="queryConditions">
+        WHERE deleted = 0
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (LOWER(company_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                OR LOWER(taxpayer_id) LIKE CONCAT('%', LOWER(#{keyword}), '%'))
+        </if>
+    </sql>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM invoice_title
+        <include refid="queryConditions"/>
+    </select>
+
+    <select id="selectPage" resultType="com.saibao.invoice.domain.InvoiceTitle">
+        SELECT id, company_name, taxpayer_id, registered_address, phone, bank_name,
+               bank_account, status, current_published_version_id, subject_names, updated_at, updated_by
+        FROM invoice_title
+        <include refid="queryConditions"/>
+        ORDER BY updated_at DESC, id DESC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <select id="selectById" resultType="com.saibao.invoice.domain.InvoiceTitle">
+        SELECT id, company_name, taxpayer_id, registered_address, phone, bank_name,
+               bank_account, status, current_published_version_id, subject_names, updated_at, updated_by
+        FROM invoice_title WHERE id = #{id} AND deleted = 0
+    </select>
+
+    <select id="selectByTaxpayerId" resultType="com.saibao.invoice.domain.InvoiceTitle">
+        SELECT id, company_name, taxpayer_id, registered_address, phone, bank_name,
+               bank_account, status, current_published_version_id, subject_names, updated_at, updated_by
+        FROM invoice_title WHERE taxpayer_id = #{taxpayerId} AND deleted = 0
+    </select>
+
+    <select id="selectSubjectIds" resultType="long">
+        SELECT subject_id FROM invoice_title_subject WHERE title_id = #{titleId} ORDER BY id ASC
+    </select>
+
+    <insert id="insert" parameterType="com.saibao.invoice.domain.InvoiceTitle" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO invoice_title
+        (company_name, taxpayer_id, registered_address, phone, bank_name, bank_account,
+         status, subject_names, created_by, created_at, updated_by, updated_at, deleted)
+        VALUES
+        (#{companyName}, #{taxpayerId}, #{registeredAddress}, #{phone}, #{bankName}, #{bankAccount},
+         #{status}, #{subjectNames}, #{createdBy}, #{createdAt}, #{updatedBy}, #{updatedAt}, 0)
+    </insert>
+
+    <update id="update" parameterType="com.saibao.invoice.domain.InvoiceTitle">
+        UPDATE invoice_title
+        SET company_name = #{companyName}, taxpayer_id = #{taxpayerId},
+            registered_address = #{registeredAddress}, phone = #{phone}, bank_name = #{bankName},
+            bank_account = #{bankAccount}, status = #{status}, subject_names = #{subjectNames},
+            updated_by = #{updatedBy}, updated_at = #{updatedAt}
+        WHERE id = #{id} AND deleted = 0
+    </update>
+
+    <insert id="insertTitleSubject">
+        INSERT INTO invoice_title_subject (title_id, subject_id, created_by, created_at)
+        VALUES (#{titleId}, #{subjectId}, #{createdBy}, CURRENT_TIMESTAMP)
+    </insert>
+
+    <delete id="deleteTitleSubjects">
+        DELETE FROM invoice_title_subject WHERE title_id = #{titleId}
+    </delete>
+
+    <update id="updateCurrentPublishedVersion">
+        UPDATE invoice_title
+        SET current_published_version_id = #{versionId}, updated_by = #{updatedBy}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id} AND deleted = 0
+    </update>
+
+    <update id="updateStatus">
+        UPDATE invoice_title
+        SET status = #{status}, updated_by = #{updatedBy}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id} AND deleted = 0
+    </update>
+</mapper>

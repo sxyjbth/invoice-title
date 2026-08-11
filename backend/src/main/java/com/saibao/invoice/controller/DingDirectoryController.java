@@ -1,0 +1,48 @@
+package com.saibao.invoice.controller;
+
+import com.saibao.invoice.dto.DepartmentDirectoryPageQueryDTO;
+import com.saibao.invoice.dto.EmployeeDirectoryPageQueryDTO;
+import com.saibao.invoice.service.IDingDirectoryService;
+import com.saibao.invoice.service.IDingDirectorySyncService;
+import com.saibao.invoice.vo.DingDepartmentVO;
+import com.saibao.invoice.vo.DingEmployeeVO;
+import com.saibao.invoice.vo.PageResult;
+import com.saibao.invoice.vo.DingDirectorySyncResultVO;
+import com.saibao.invoice.vo.FinanceAccountVO;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+
+/** 财务端员工和部门选择器使用的钉钉通讯录接口。 */
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/api/admin/directory")
+@Tag(name = "财务端-钉钉通讯录", description = "分页查询已同步的员工和部门，财务无需手工填写钉钉 ID")
+public class DingDirectoryController {
+    private final IDingDirectoryService service;
+    private final IDingDirectorySyncService syncService;
+
+    @GetMapping("/employees")
+    @Operation(summary = "分页查询员工", description = "支持员工姓名、工号、部门名称和手机号模糊查询；传入主体 ID 后可按最终查看权限筛选")
+    public PageResult<DingEmployeeVO> employees(@Valid EmployeeDirectoryPageQueryDTO query) {
+        return service.pageEmployees(query);
+    }
+
+    @GetMapping("/departments")
+    @Operation(summary = "分页查询部门", description = "返回部门名称、钉钉部门 ID 和在职员工数")
+    public PageResult<DingDepartmentVO> departments(@Valid DepartmentDirectoryPageQueryDTO query) {
+        return service.pageDepartments(query);
+    }
+
+    @PostMapping("/sync")
+    @Operation(summary = "手动同步钉钉通讯录", description = "立即从钉钉全量同步部门、员工和任职状态；同一时间只允许一个同步任务执行")
+    public DingDirectorySyncResultVO synchronize(@AuthenticationPrincipal FinanceAccountVO account) {
+        return syncService.synchronize("MANUAL", account.getUsername());
+    }
+}

@@ -1,0 +1,61 @@
+server:
+  port: 28082
+  servlet:
+    session:
+      timeout: 8h
+      cookie:
+        http-only: true
+        same-site: lax
+        secure: ${INVOICE_SESSION_COOKIE_SECURE:false}
+
+spring:
+  application:
+    name: invoice-title-service
+  profiles:
+    default: local
+  datasource:
+    url: jdbc:mysql://${INVOICE_MYSQL_HOST:127.0.0.1}:${INVOICE_MYSQL_PORT:23306}/${INVOICE_MYSQL_DATABASE:invoice_title}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${INVOICE_MYSQL_USERNAME:invoice_title}
+    password: ${INVOICE_MYSQL_PASSWORD:invoice_title_local}
+  data:
+    redis:
+      host: ${INVOICE_REDIS_HOST:127.0.0.1}
+      port: ${INVOICE_REDIS_PORT:26379}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+mybatis:
+  mapper-locations: classpath*:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+sebo:
+  dingtalk:
+    # 企业列表和密钥仅通过 SEBO_DINGTALK_ORGANIZATIONS_<序号>_* 环境变量或配置中心注入。
+    enabled: ${SEBO_DINGTALK_ENABLED:false}
+    root-department-id: ${SEBO_DINGTALK_ROOT_DEPARTMENT_ID:1}
+    base-url: ${SEBO_DINGTALK_BASE_URL:https://oapi.dingtalk.com}
+    sync-cron: ${SEBO_DINGTALK_SYNC_CRON:0 0 * * * *}
+    sync-zone: ${SEBO_DINGTALK_SYNC_ZONE:Asia/Shanghai}
+    request-max-attempts: ${SEBO_DINGTALK_REQUEST_MAX_ATTEMPTS:3}
+    request-interval-millis: ${SEBO_DINGTALK_REQUEST_INTERVAL_MILLIS:120}
+    request-retry-delay-millis: ${SEBO_DINGTALK_REQUEST_RETRY_DELAY_MILLIS:1200}
+    sync-max-attempts: ${SEBO_DINGTALK_SYNC_MAX_ATTEMPTS:3}
+    sync-retry-delay-millis: ${SEBO_DINGTALK_SYNC_RETRY_DELAY_MILLIS:2000}
+
+invoice:
+  import:
+    storage-dir: ${INVOICE_IMPORT_STORAGE_DIR:../.runtime/data/imports}
+  auth:
+    super-admin:
+      # 仅首次启动且数据库没有超级管理员时创建，不会覆盖数据库中的密码。
+      username: ${INVOICE_SUPER_ADMIN_USERNAME:superadmin}
+      password: ${INVOICE_SUPER_ADMIN_PASSWORD:ChangeMe@123}
+      display-name: ${INVOICE_SUPER_ADMIN_DISPLAY_NAME:超级管理员}

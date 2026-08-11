@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.saibao.invoice.mapper.InvoiceImportTaskMapper">
+    <sql id="taskConditions">
+        WHERE 1 = 1
+        <if test="status != null and status != ''">AND status = #{status}</if>
+        <if test="keyword != null and keyword != ''">
+            AND (LOWER(original_file_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                OR LOWER(task_no) LIKE CONCAT('%', LOWER(#{keyword}), '%'))
+        </if>
+    </sql>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM invoice_import_task <include refid="taskConditions"/>
+    </select>
+
+    <select id="selectPage" resultType="com.saibao.invoice.domain.InvoiceImportTask">
+        SELECT id, task_no, original_file_name, storage_provider, storage_key, status,
+               total_count, success_count, failure_count, error_file_key, started_at,
+               finished_at, created_by, created_at
+        FROM invoice_import_task
+        <include refid="taskConditions"/>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <insert id="insert" parameterType="com.saibao.invoice.domain.InvoiceImportTask" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO invoice_import_task
+        (task_no, original_file_name, storage_provider, storage_key, status,
+         total_count, success_count, failure_count, started_at, created_by, created_at)
+        VALUES
+        (#{taskNo}, #{originalFileName}, #{storageProvider}, #{storageKey}, #{status},
+         #{totalCount}, #{successCount}, #{failureCount}, #{startedAt}, #{createdBy}, #{createdAt})
+    </insert>
+
+    <update id="updateResult">
+        UPDATE invoice_import_task
+        SET status = #{status}, total_count = #{totalCount}, success_count = #{successCount},
+            failure_count = #{failureCount}, finished_at = #{finishedAt}
+        WHERE id = #{id}
+    </update>
+
+    <insert id="insertRowError" parameterType="com.saibao.invoice.domain.InvoiceImportRowError" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO invoice_import_row_error
+        (task_id, row_no, taxpayer_id, error_code, error_message, raw_data_json, created_at)
+        VALUES
+        (#{taskId}, #{rowNo}, #{taxpayerId}, #{errorCode}, #{errorMessage}, #{rawDataJson}, #{createdAt})
+    </insert>
+
+    <select id="countRowErrors" resultType="long">
+        SELECT COUNT(*) FROM invoice_import_row_error WHERE task_id = #{taskId}
+    </select>
+
+    <select id="selectRowErrorPage" resultType="com.saibao.invoice.domain.InvoiceImportRowError">
+        SELECT id, task_id, row_no, taxpayer_id, error_code, error_message, raw_data_json, created_at
+        FROM invoice_import_row_error
+        WHERE task_id = #{taskId}
+        ORDER BY row_no ASC, id ASC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+</mapper>

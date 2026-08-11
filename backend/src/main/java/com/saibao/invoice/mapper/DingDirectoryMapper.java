@@ -1,0 +1,44 @@
+package com.saibao.invoice.mapper;
+
+import com.saibao.invoice.domain.DingDepartment;
+import com.saibao.invoice.domain.DingEmployee;
+import com.saibao.invoice.domain.DingDirectorySyncLog;
+import com.saibao.invoice.dto.DepartmentDirectoryPageQueryDTO;
+import com.saibao.invoice.dto.EmployeeDirectoryPageQueryDTO;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
+
+/** 钉钉通讯录部门与员工查询持久化接口。 */
+public interface DingDirectoryMapper {
+    long countEmployees(EmployeeDirectoryPageQueryDTO query);
+    List<DingEmployee> selectEmployeePage(EmployeeDirectoryPageQueryDTO query);
+    DingEmployee selectEmployeeByIdentity(@Param("corpCode") String corpCode,
+                                          @Param("dingUserId") String dingUserId);
+    DingEmployee selectActiveEmployeeById(@Param("id") Long id);
+    List<DingEmployee> selectEmployeesByIds(@Param("ids") List<Long> ids);
+    long countDepartments(DepartmentDirectoryPageQueryDTO query);
+    List<DingDepartment> selectDepartmentPage(DepartmentDirectoryPageQueryDTO query);
+    List<DingDepartment> selectDepartmentsByIds(@Param("ids") List<Long> ids);
+
+    DingDepartment selectDepartmentByDingId(@Param("corpCode") String corpCode,
+                                            @Param("dingDepartmentId") String dingDepartmentId);
+    int insertDepartment(DingDepartment department);
+    int updateDepartment(DingDepartment department);
+    int disableDepartmentsNotIn(@Param("corpCode") String corpCode,
+                                @Param("dingDepartmentIds") List<String> dingDepartmentIds);
+
+    DingEmployee selectAnyEmployeeByIdentity(@Param("corpCode") String corpCode,
+                                             @Param("dingUserId") String dingUserId);
+    int insertEmployee(DingEmployee employee);
+    int updateEmployee(DingEmployee employee);
+    int inactivateEmployeesNotIn(@Param("corpCode") String corpCode,
+                                 @Param("dingUserIds") List<String> dingUserIds);
+    int deleteEmployeeDepartments(@Param("employeeId") Long employeeId);
+    int insertEmployeeDepartment(@Param("employeeId") Long employeeId,
+                                 @Param("departmentId") Long departmentId,
+                                 @Param("primary") boolean primary);
+
+    int insertSyncLog(DingDirectorySyncLog syncLog);
+    int finishSyncLog(DingDirectorySyncLog syncLog);
+}

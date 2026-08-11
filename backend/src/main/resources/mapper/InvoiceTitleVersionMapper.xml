@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.saibao.invoice.mapper.InvoiceTitleVersionMapper">
+    <select id="selectById" resultType="com.saibao.invoice.domain.InvoiceTitleVersion">
+        SELECT id, title_id, version_no, status, change_type, change_summary, company_name, taxpayer_id, registered_address,
+               phone, bank_name, bank_account, subject_ids_json, created_by, created_at
+        FROM invoice_title_version WHERE id = #{id}
+    </select>
+
+    <select id="selectCurrentPublished" resultType="com.saibao.invoice.domain.InvoiceTitleVersion">
+        SELECT id, title_id, version_no, status, change_type, change_summary, company_name, taxpayer_id, registered_address,
+               phone, bank_name, bank_account, subject_ids_json, created_by, created_at
+        FROM invoice_title_version
+        WHERE title_id = #{titleId} AND status = 'PUBLISHED'
+        ORDER BY version_no DESC, id DESC LIMIT 1
+    </select>
+
+    <select id="selectNextVersionNo" resultType="int">
+        SELECT COALESCE(MAX(version_no), 0) + 1 FROM invoice_title_version WHERE title_id = #{titleId}
+    </select>
+
+    <insert id="insert" parameterType="com.saibao.invoice.domain.InvoiceTitleVersion"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO invoice_title_version
+        (title_id, version_no, status, change_type, change_summary, company_name, taxpayer_id, registered_address,
+         phone, bank_name, bank_account, subject_ids_json, created_by, created_at)
+        VALUES
+        (#{titleId}, #{versionNo}, #{status}, COALESCE(#{changeType}, 'EDIT'), #{changeSummary}, #{companyName}, #{taxpayerId}, #{registeredAddress},
+         #{phone}, #{bankName}, #{bankAccount}, #{subjectIdsJson}, #{createdBy}, #{createdAt})
+    </insert>
+
+    <select id="countByTitleId" resultType="long">
+        SELECT COUNT(*) FROM invoice_title_version WHERE title_id = #{titleId}
+    </select>
+
+    <select id="selectPageByTitleId" resultType="com.saibao.invoice.domain.InvoiceTitleVersion">
+        SELECT id, title_id, version_no, status, change_type, change_summary, company_name, taxpayer_id,
+               registered_address, phone, bank_name, bank_account, subject_ids_json, created_by, created_at
+        FROM invoice_title_version
+        WHERE title_id = #{titleId}
+        ORDER BY version_no DESC, id DESC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+</mapper>
