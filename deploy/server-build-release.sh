@@ -10,6 +10,8 @@ SOURCE_DIR="${INVOICE_SOURCE_DIR:-${APP_HOME}/source}"
 NODE_HOME="${INVOICE_NODE_HOME:-${APP_HOME}/runtime/node}"
 PNPM_HOME="${INVOICE_PNPM_HOME:-${APP_HOME}/runtime/pnpm}"
 MAVEN_HOME="${INVOICE_MAVEN_HOME:-${APP_HOME}/runtime/maven}"
+PNPM_STORE="${APP_HOME}/runtime/pnpm-store"
+MAVEN_REPOSITORY="${APP_HOME}/runtime/maven-repository"
 
 export PATH="${NODE_HOME}/bin:${PNPM_HOME}/node_modules/.bin:${MAVEN_HOME}/bin:${PATH}"
 # 服务器同时承载既有项目，限制单次构建的堆内存，避免挤压线上服务。
@@ -37,10 +39,11 @@ fi
 rm -rf -- "${staging_dir}"
 mkdir -p "${staging_dir}/backend" \
     "${staging_dir}/frontend/employee-h5" \
-    "${staging_dir}/frontend/finance-admin"
+    "${staging_dir}/frontend/finance-admin" \
+    "${PNPM_STORE}" "${MAVEN_REPOSITORY}"
 
 # 锁定依赖版本，并在构建制品前执行全部前后端测试。
-pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile --store-dir "${APP_HOME}/runtime/pnpm-store"
 pnpm run test:frontend
 
 VITE_PUBLIC_BASE=/invoice/employee/ \
@@ -51,7 +54,9 @@ VITE_PUBLIC_BASE=/invoice/finance/ \
 VITE_API_BASE_PREFIX=/invoice \
 pnpm --filter @invoice-title/finance-admin build
 
-mvn -f backend/pom.xml --batch-mode clean verify
+mvn -f backend/pom.xml --batch-mode \
+    "-Dmaven.repo.local=${APP_HOME}/runtime/maven-repository" \
+    -s scripts/maven-settings.xml clean verify
 
 install -m 0640 backend/target/invoice-title-service-0.1.0-SNAPSHOT.jar \
     "${staging_dir}/backend/invoice-title-service.jar"

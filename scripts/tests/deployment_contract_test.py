@@ -72,6 +72,9 @@ class DeploymentContractTest(unittest.TestCase):
         self.assertIn('${APP_HOME}/releases/', script)
         self.assertIn('NODE_OPTIONS', script)
         self.assertIn('MAVEN_OPTS', script)
+        self.assertIn('--store-dir "${APP_HOME}/runtime/pnpm-store"', script)
+        self.assertIn('-Dmaven.repo.local=${APP_HOME}/runtime/maven-repository', script)
+        self.assertIn('-s scripts/maven-settings.xml', script)
 
     def test_server_activation_rolls_back_when_health_check_fails(self):
         script = (PROJECT_ROOT / "deploy/server-activate-release.sh").read_text(encoding="utf-8")
