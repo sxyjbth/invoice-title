@@ -77,6 +77,8 @@ class DeploymentContractTest(unittest.TestCase):
         self.assertIn('-s scripts/maven-settings.xml', script)
         self.assertIn('JAVA_HOME="${INVOICE_JAVA_HOME:-${APP_HOME}/runtime/jdk-21}"', script)
         self.assertIn('${JAVA_HOME}/bin/javac', script)
+        self.assertIn('find "${staging_dir}/frontend" -type d -exec chmod 0755 {} +', script)
+        self.assertIn('find "${staging_dir}/frontend" -type f -exec chmod 0644 {} +', script)
 
     def test_server_activation_rolls_back_when_health_check_fails(self):
         script = (PROJECT_ROOT / "deploy/server-activate-release.sh").read_text(encoding="utf-8")

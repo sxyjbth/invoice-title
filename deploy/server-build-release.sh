@@ -71,6 +71,11 @@ cp -a frontend/employee-h5/dist/. "${staging_dir}/frontend/employee-h5/"
 cp -a frontend/finance-admin/dist/. "${staging_dir}/frontend/finance-admin/"
 printf '%s\n' "${commit_id}" > "${staging_dir}/GIT_COMMIT"
 
+# Nginx 只需读取公开静态资源；后端 JAR 和 release 元数据继续保持私有权限。
+chmod 0755 "${staging_dir}" "${staging_dir}/frontend"
+find "${staging_dir}/frontend" -type d -exec chmod 0755 {} +
+find "${staging_dir}/frontend" -type f -exec chmod 0644 {} +
+
 # 同一文件系统内原子改名，避免 current 指向复制到一半的目录。
 mv -- "${staging_dir}" "${release_dir}"
 echo "${release_dir}"
