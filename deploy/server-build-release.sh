@@ -12,6 +12,9 @@ PNPM_HOME="${INVOICE_PNPM_HOME:-${APP_HOME}/runtime/pnpm}"
 MAVEN_HOME="${INVOICE_MAVEN_HOME:-${APP_HOME}/runtime/maven}"
 
 export PATH="${NODE_HOME}/bin:${PNPM_HOME}/node_modules/.bin:${MAVEN_HOME}/bin:${PATH}"
+# 服务器同时承载既有项目，限制单次构建的堆内存，避免挤压线上服务。
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
+export MAVEN_OPTS="${MAVEN_OPTS:--Xms128m -Xmx768m}"
 
 for command_name in git node pnpm mvn; do
     command -v "${command_name}" >/dev/null 2>&1 || {
