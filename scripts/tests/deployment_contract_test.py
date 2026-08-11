@@ -75,6 +75,7 @@ class DeploymentContractTest(unittest.TestCase):
         self.assertIn('--store-dir "${APP_HOME}/runtime/pnpm-store"', script)
         self.assertIn('-Dmaven.repo.local=${APP_HOME}/runtime/maven-repository', script)
         self.assertIn('-s scripts/maven-settings.xml', script)
+        self.assertIn('JAVA_HOME="${INVOICE_JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"', script)
 
     def test_server_activation_rolls_back_when_health_check_fails(self):
         script = (PROJECT_ROOT / "deploy/server-activate-release.sh").read_text(encoding="utf-8")

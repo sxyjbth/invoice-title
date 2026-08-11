@@ -12,11 +12,18 @@ PNPM_HOME="${INVOICE_PNPM_HOME:-${APP_HOME}/runtime/pnpm}"
 MAVEN_HOME="${INVOICE_MAVEN_HOME:-${APP_HOME}/runtime/maven}"
 PNPM_STORE="${APP_HOME}/runtime/pnpm-store"
 MAVEN_REPOSITORY="${APP_HOME}/runtime/maven-repository"
+JAVA_HOME="${INVOICE_JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"
 
 export PATH="${NODE_HOME}/bin:${PNPM_HOME}/node_modules/.bin:${MAVEN_HOME}/bin:${PATH}"
+export JAVA_HOME
 # 服务器同时承载既有项目，限制单次构建的堆内存，避免挤压线上服务。
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
 export MAVEN_OPTS="${MAVEN_OPTS:--Xms128m -Xmx768m}"
+
+[[ -x "${JAVA_HOME}/bin/java" ]] || {
+    echo "Java 21 不可用: ${JAVA_HOME}" >&2
+    exit 1
+}
 
 for command_name in git node pnpm mvn; do
     command -v "${command_name}" >/dev/null 2>&1 || {
