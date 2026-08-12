@@ -4,6 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises } from "@vue/test-utils";
 import EmployeeApp from "../src/App.vue";
 import { elementPlusOptions } from "../src/element-plus";
+import requestAuthCodeApi from "dingtalk-jsapi/api/runtime/permission/requestAuthCode";
+
+vi.mock("dingtalk-jsapi/api/runtime/permission/requestAuthCode", () => ({
+  default: vi.fn().mockResolvedValue({ code: "sdk-auth-code" }),
+}));
 
 const global = { plugins: [[ElementPlus, elementPlusOptions]] } as any;
 
@@ -63,6 +68,17 @@ describe("员工端发票抬头", () => {
     expect(request.mock.calls.some(([url]) => String(url).includes("dingUserId="))).toBe(false);
     expect((window as any).dd.runtime.permission.requestAuthCode)
       .toHaveBeenCalledWith(expect.objectContaining({ corpId: "ding-sebo" }));
+  });
+
+  it("钉钉 PC 注入非函数的 requestAuthCode 时回退使用模块化 JSAPI", async () => {
+    (window as any).dd.runtime.permission.requestAuthCode = {};
+    const request = mockEmployeeApis();
+
+    mount(EmployeeApp, { global });
+    await flushPromises();
+
+    expect(requestAuthCodeApi).toHaveBeenCalledWith(expect.objectContaining({ corpId: "ding-sebo" }));
+    expect(request.mock.calls.some(([url]) => String(url).includes("/api/employee/auth/dingtalk"))).toBe(true);
   });
 
   it("点击展示二维码后显示十分钟有效的临时二维码", async () => {

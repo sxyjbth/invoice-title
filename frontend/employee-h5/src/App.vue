@@ -79,7 +79,10 @@ async function resolveDingTalkOrganization(): Promise<DingTalkOrganization> {
 function requestDingTalkAuthCode(corpId: string): Promise<string> {
   const queryCode = new URLSearchParams(window.location.search).get("authCode");
   const dd = (window as any).dd;
-  const requestAuthCode = dd?.runtime?.permission?.requestAuthCode || requestAuthCodeApi;
+  const injectedRequestAuthCode = dd?.runtime?.permission?.requestAuthCode;
+  const requestAuthCode = typeof injectedRequestAuthCode === "function"
+    ? injectedRequestAuthCode
+    : requestAuthCodeApi;
   if (typeof requestAuthCode !== "function") {
     if (queryCode) return Promise.resolve(queryCode);
     return Promise.reject(new Error("请从钉钉工作台打开“发票抬头”应用"));
