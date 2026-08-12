@@ -286,6 +286,44 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
+  it("员工授权翻页后仍保存前一页的权限修改", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/admin/directory/employees")) {
+        const pageNum = new URL(url, "http://localhost").searchParams.get("pageNum");
+        const id = pageNum === "2" ? 102 : 101;
+        return new Response(JSON.stringify({ records: [{
+          id,
+          dingUserId: `ding-employee-${id}`,
+          employeeNo: `SB${id}`,
+          employeeName: pageNum === "2" ? "第二页员工" : "第一页员工",
+          departmentId: 99,
+          departmentName: "平台开发部",
+          mobile: `13800000${id}`,
+          permissionEnabled: false,
+        }], total: 2 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const wrapper = mount(AdminApp, { global, attachTo: document.body });
+    await wrapper.findAll("nav button").find((item) => item.text().includes("主体权限"))!.trigger("click");
+    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
+    await permissionPage.findAll("button").find((item) => item.text().includes("编辑") && item.element.closest(".permission-level-row")?.textContent?.includes("员工授权"))!.trigger("click");
+    await flushPromises();
+
+    (document.body.querySelector('[aria-label="第一页员工的查看权限"]') as HTMLElement).click();
+    (wrapper.vm as any).directoryPageNum = 2;
+    await (wrapper.vm as any).loadDirectory();
+    await flushPromises();
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("确定选择"))!.click();
+    await flushPromises();
+
+    const saveRequest = request.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(saveRequest?.[1]?.body).toContain('"employeeId":101,"effect":"ALLOW"');
+    wrapper.unmount();
+  });
+
   it("后端 employeeId 字段返回的既有员工授权可以正确回显", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ records: [{
       id: 99,
@@ -363,6 +401,18 @@ describe("财务端发票抬头管理", () => {
       status: 401,
       headers: { "Content-Type": "application/json" },
     }));
+    await nextTick();
+
+    expect(wrapper.find(".login-page").exists()).toBe(true);
+  });
+
+  it("任一管理接口返回 401 时统一退出失效会话并显示登录页", async () => {
+    const wrapper = mount(AdminApp, { global });
+
+    await expect((wrapper.vm as any).readApi(new Response('{"message":"请先登录财务管理端"}', {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    }), "抬头列表加载失败")).rejects.toThrow("请先登录财务管理端");
     await nextTick();
 
     expect(wrapper.find(".login-page").exists()).toBe(true);

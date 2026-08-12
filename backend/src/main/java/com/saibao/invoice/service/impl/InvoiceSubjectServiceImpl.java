@@ -31,13 +31,17 @@ public class InvoiceSubjectServiceImpl implements IInvoiceSubjectService {
 
     @Override
     public Long create(InvoiceSubjectSaveDTO request) {
+        String subjectName = request.getSubjectName().trim();
+        if (mapper.selectByName(subjectName) != null) {
+            throw new IllegalArgumentException("主体名称已存在：" + subjectName);
+        }
         String subjectCode = normalizeCode(request.getSubjectCode());
         if (subjectCode == null) subjectCode = generateSubjectCode();
         InvoiceSubject duplicate = mapper.selectByCode(subjectCode);
         if (duplicate != null) throw new IllegalArgumentException("主体编码已存在：" + subjectCode);
         InvoiceSubject subject = new InvoiceSubject();
         subject.setSubjectCode(subjectCode);
-        subject.setSubjectName(request.getSubjectName().trim());
+        subject.setSubjectName(subjectName);
         subject.setStatus(request.getStatus());
         subject.setSortNo(request.getSortNo());
         subject.setCreatedBy(request.getOperatorUserId());
@@ -52,6 +56,11 @@ public class InvoiceSubjectServiceImpl implements IInvoiceSubjectService {
     public void update(Long id, InvoiceSubjectSaveDTO request) {
         InvoiceSubject current = mapper.selectById(id);
         if (current == null) throw new IllegalArgumentException("主体不存在：" + id);
+        String subjectName = request.getSubjectName().trim();
+        InvoiceSubject duplicateName = mapper.selectByName(subjectName);
+        if (duplicateName != null && !duplicateName.getId().equals(id)) {
+            throw new IllegalArgumentException("主体名称已存在：" + subjectName);
+        }
         String subjectCode = normalizeCode(request.getSubjectCode());
         if (subjectCode != null) {
             InvoiceSubject duplicate = mapper.selectByCode(subjectCode);
@@ -60,7 +69,7 @@ public class InvoiceSubjectServiceImpl implements IInvoiceSubjectService {
             }
             current.setSubjectCode(subjectCode);
         }
-        current.setSubjectName(request.getSubjectName().trim());
+        current.setSubjectName(subjectName);
         current.setStatus(request.getStatus());
         current.setSortNo(request.getSortNo());
         current.setUpdatedBy(request.getOperatorUserId());

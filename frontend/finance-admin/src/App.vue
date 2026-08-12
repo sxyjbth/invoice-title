@@ -356,6 +356,7 @@ const directoryPageSize = ref(10);
 const directoryTotal = ref(0);
 const directoryEmployees = ref<DingEmployee[]>([]);
 const directoryDepartments = ref<DingDepartment[]>([]);
+const loadedDirectoryEmployees = reactive<Record<number, DingEmployee>>({});
 const selectedDepartmentIds = ref<number[]>([]);
 const employeeEnabledDraft = reactive<Record<number, boolean>>({});
 const employeePermissionStatus = ref<"ALL" | "ENABLED" | "DISABLED">("ALL");
@@ -432,6 +433,7 @@ onMounted(() => {
 
 async function readApi<T>(response: Response, fallbackMessage: string): Promise<T> {
   if (response.ok) return await response.json() as T;
+  if (response.status === 401) invalidateFinanceSession();
   let message = fallbackMessage;
   try {
     const error = await response.json() as { message?: string };
@@ -440,6 +442,14 @@ async function readApi<T>(response: Response, fallbackMessage: string): Promise<
     // 非 JSON 错误响应使用业务默认提示。
   }
   throw new Error(message);
+}
+
+function invalidateFinanceSession() {
+  financeAccounts.value = [];
+  accountTotal.value = 0;
+  currentUser.value = null;
+  activeMenu.value = "titles";
+  ElMessage.warning("登录状态已失效，请重新登录");
 }
 
 function toTitle(record: any): InvoiceTitle {
@@ -581,11 +591,7 @@ async function logout() {
 
 async function handleFinanceAccountResponse(response: Response) {
   if (response.status === 401) {
-    financeAccounts.value = [];
-    accountTotal.value = 0;
-    currentUser.value = null;
-    activeMenu.value = "titles";
-    ElMessage.warning("登录状态已失效，请重新登录");
+    invalidateFinanceSession();
     return null;
   }
   return await readApi<{ records: FinanceAccount[]; total: number }>(response, "财务账号加载失败");
@@ -970,6 +976,7 @@ async function loadDirectory() {
     if (permissionForm.targetType === "USER") {
       directoryEmployees.value = result.records;
       directoryEmployees.value.forEach((employee) => {
+        loadedDirectoryEmployees[employee.id] = employee;
         employeeEnabledDraft[employee.id] = resolveEmployeeEnabled(employee);
       });
     } else directoryDepartments.value = result.records;
@@ -990,6 +997,7 @@ function openPermissionEditor(targetType: "USER" | "DEPARTMENT") {
   employeePermissionStatus.value = "ALL";
   selectedDepartmentIds.value = profile.departments.map((department) => department.id);
   Object.keys(employeeEnabledDraft).forEach((key) => delete employeeEnabledDraft[Number(key)]);
+  Object.keys(loadedDirectoryEmployees).forEach((key) => delete loadedDirectoryEmployees[Number(key)]);
   permissionDialogVisible.value = true;
   void loadDirectory();
 }
@@ -1059,8 +1067,9 @@ async function applyPermissionSelection() {
     profile.departments = [...selected.values()];
   } else {
     const rules = new Map(profile.employeeRules.map((rule) => [employeeRuleId(rule), rule]));
-    directoryEmployees.value.forEach((employee) => {
-      const enabled = employeeEnabledDraft[employee.id];
+    Object.entries(employeeEnabledDraft).forEach(([employeeId, enabled]) => {
+      const employee = loadedDirectoryEmployees[Number(employeeId)];
+      if (!employee) return;
       const inheritedEnabled = inheritedEmployeeEnabled(employee);
       if (enabled === inheritedEnabled) rules.delete(employee.id);
       else rules.set(employee.id, { ...employee, effect: enabled ? "ALLOW" : "DENY" });
@@ -1280,7 +1289,7 @@ function openLogDetail(log: OperationLog) {
                 <strong>员工授权</strong>
                 <p>单独授权 {{ activePermissionProfile.employeeCount }} 名员工（允许或拒绝均优先于部门）</p>
                 <div class="employee-avatar-list">
-                  <span v-for="employee in activePermissionProfile.employeeRules.slice(0, 4)" :key="employee.id" :title="employee.effect === 'DENY' ? '单独拒绝' : '单独允许'">{{ employee.employeeName.slice(0, 1) }}</span>
+                  <span v-for="employee in activePermissionProfile.employeeRules.slice(0, 4)" :key="employeeRuleId(employee)" :title="employee.effect === 'DENY' ? '单独拒绝' : '单独允许'">{{ employee.employeeName.slice(0, 1) }}</span>
                   <span v-if="activePermissionProfile.employeeCount > 4">
                     +{{ activePermissionProfile.employeeCount - 4 }}
                   </span>

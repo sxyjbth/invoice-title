@@ -101,6 +101,12 @@ class FinanceAdministrationCrudWebTest {
                 "SELECT subject_code FROM invoice_subject WHERE id = ?", String.class, subjectId);
         assertThat(generatedCode).startsWith("SUB-");
 
+        HttpResponse<String> duplicateName = send(administrator, "POST", "/api/admin/subjects", """
+                {"subjectName":"上线测试主体","status":"ENABLED","sortNo":100,"operatorUserId":"admin"}
+                """);
+        assertThat(duplicateName.statusCode()).isEqualTo(400);
+        assertThat(duplicateName.body()).contains("主体名称已存在");
+
         HttpResponse<String> updated = send(administrator, "PUT", "/api/admin/subjects/" + subjectId, """
                 {"subjectName":"上线编辑主体","status":"ENABLED","sortNo":88,"operatorUserId":"admin"}
                 """);
