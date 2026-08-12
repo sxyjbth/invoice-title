@@ -3,6 +3,7 @@ package com.saibao.invoice.service.impl;
 import com.saibao.invoice.domain.InvoiceTitle;
 import com.saibao.invoice.domain.InvoiceSubject;
 import com.saibao.invoice.domain.InvoiceTitleVersion;
+import com.saibao.invoice.domain.PublishedSubjectBinding;
 import com.saibao.invoice.dto.InvoiceTitlePageQueryDTO;
 import com.saibao.invoice.dto.InvoiceTitleSaveDTO;
 import com.saibao.invoice.enums.InvoiceTitleStatusEnum;
@@ -53,7 +54,8 @@ public class InvoiceTitleServiceImpl implements IInvoiceTitleService {
     @Transactional
     public Long create(InvoiceTitleSaveDTO request, String operatorUserId) {
         ensureTaxpayerUnique(request.getTaxpayerId(), null);
-        List<InvoiceSubject> subjects = requireActiveSubjects(request.getSubjectIds());
+        List<InvoiceSubject> subjects = requireActiveSubjects(request.getSubjectIds(), isPublished(request));
+        ensureSubjectsAvailableForPublication(request, subjects, null);
         InvoiceTitle title = new InvoiceTitle();
         applyRequest(title, request, subjects, operatorUserId);
         title.setCreatedBy(operatorUserId);
@@ -70,7 +72,8 @@ public class InvoiceTitleServiceImpl implements IInvoiceTitleService {
         InvoiceTitle title = invoiceTitleMapper.selectById(id);
         if (title == null) throw new IllegalArgumentException("发票抬头不存在：" + id);
         ensureTaxpayerUnique(request.getTaxpayerId(), id);
-        List<InvoiceSubject> subjects = requireActiveSubjects(request.getSubjectIds());
+        List<InvoiceSubject> subjects = requireActiveSubjects(request.getSubjectIds(), isPublished(request));
+        ensureSubjectsAvailableForPublication(request, subjects, id);
         applyRequest(title, request, subjects, operatorUserId);
         if (invoiceTitleMapper.update(title) == 0) throw new IllegalArgumentException("发票抬头不存在：" + id);
         replaceSubjects(id, subjects, operatorUserId);
@@ -93,14 +96,42 @@ public class InvoiceTitleServiceImpl implements IInvoiceTitleService {
         }
     }
 
-    private List<InvoiceSubject> requireActiveSubjects(List<Long> subjectIds) {
+    private List<InvoiceSubject> requireActiveSubjects(List<Long> subjectIds, boolean lockForPublication) {
+        if (subjectIds == null || subjectIds.isEmpty()) {
+            if (lockForPublication) throw new IllegalArgumentException("发布抬头时请至少选择一个展示主体");
+            return Collections.emptyList();
+        }
         List<Long> distinctIds = new LinkedHashSet<>(subjectIds).stream().toList();
-        List<InvoiceSubject> subjects = invoiceSubjectMapper.selectByIds(distinctIds);
+        List<InvoiceSubject> subjects = lockForPublication
+                ? invoiceSubjectMapper.selectByIdsForUpdate(distinctIds)
+                : invoiceSubjectMapper.selectByIds(distinctIds);
         if (subjects.size() != distinctIds.size()) throw new IllegalArgumentException("存在无效的展示主体");
         if (subjects.stream().anyMatch(subject -> !"ENABLED".equals(subject.getStatus()))) {
             throw new IllegalArgumentException("已停用主体不能用于发票抬头展示");
         }
         return subjects;
+    }
+
+    /**
+     * 草稿允许预选任意主体；只有发布时才校验当前有效展示关系。
+     * 同一抬头编辑发布时排除自身，避免把原有绑定误判成冲突。
+     */
+    private void ensureSubjectsAvailableForPublication(InvoiceTitleSaveDTO request,
+                                                       List<InvoiceSubject> subjects,
+                                                       Long currentTitleId) {
+        if (!isPublished(request)) return;
+        List<Long> subjectIds = subjects.stream().map(InvoiceSubject::getId).toList();
+        List<PublishedSubjectBinding> conflicts = invoiceTitleMapper
+                .selectPublishedSubjectBindings(subjectIds, currentTitleId);
+        if (!conflicts.isEmpty()) {
+            PublishedSubjectBinding conflict = conflicts.get(0);
+            throw new IllegalArgumentException("主体“" + conflict.subjectName()
+                    + "”已绑定已发布抬头“" + conflict.companyName() + "”，请先停用或调整原抬头");
+        }
+    }
+
+    private boolean isPublished(InvoiceTitleSaveDTO request) {
+        return InvoiceTitleStatusEnum.PUBLISHED.getCode().equals(request.getStatus());
     }
 
     private void applyRequest(InvoiceTitle title, InvoiceTitleSaveDTO request,

@@ -8,11 +8,9 @@ import { buildPermissionSubjectQuery } from "./utils/subject-query";
 import { resolveApiUrl } from "./api-prefix";
 import {
   ArrowDown,
-  Clock,
   Document,
   Download,
   EditPen,
-  Files,
   OfficeBuilding,
   Plus,
   Search,
@@ -23,7 +21,7 @@ import {
 } from "@element-plus/icons-vue";
 
 type StatusCode = "PUBLISHED" | "DRAFT" | "DISABLED";
-type MenuCode = "titles" | "subjects" | "permissions" | "logs" | "accounts";
+type MenuCode = "titles" | "subjects" | "permissions" | "accounts";
 
 const importTemplateUrl = resolveApiUrl("/api/admin/invoice-imports/template");
 
@@ -48,7 +46,6 @@ type InvoiceSubject = {
   code: string;
   name: string;
   status: "ENABLED" | "DISABLED";
-  titleCount: number;
   employeeCount: number;
   updatedAt: string;
   updatedBy: string;
@@ -100,37 +97,6 @@ type DingEmployee = {
 
 type EmployeeRule = DingEmployee & { employeeId?: number; effect: "ALLOW" | "DENY" };
 
-type OperationLog = {
-  id: number;
-  module: string;
-  action: string;
-  businessName: string;
-  operator: string;
-  result: "SUCCESS" | "FAILED";
-  createdAt: string;
-  detail: string;
-};
-
-const operationTypeLabels: Record<string, string> = {
-  CREATE: "新增",
-  UPDATE: "编辑",
-  PUBLISH: "发布抬头",
-  DISABLE: "停用",
-  RESTORE: "恢复版本",
-  IMPORT: "导入抬头",
-  AUTHORIZE: "新增授权",
-  REVOKE: "取消授权",
-  CREATE_ACCOUNT: "新增账号",
-  CHANGE_PASSWORD: "修改密码",
-  RESET_PASSWORD: "重置密码",
-  ENABLE_ACCOUNT: "启用账号",
-  DISABLE_ACCOUNT: "停用账号",
-};
-
-function formatOperationType(operationType: string) {
-  return operationTypeLabels[operationType] ?? operationType;
-}
-
 type ImportHistory = {
   id: number;
   taskNo: string;
@@ -143,21 +109,10 @@ type ImportHistory = {
   createdAt: string;
 };
 
-type InvoiceTitleVersion = {
-  id: number;
-  titleId: number;
-  versionNo: number;
-  status: StatusCode;
-  companyName: string;
-  createdBy: string;
-  createdAt: string;
-};
-
 const allNavigation: Array<{ code: MenuCode; label: string; icon: typeof Document; superAdminOnly?: boolean }> = [
   { code: "titles", label: "抬头管理", icon: Document },
   { code: "subjects", label: "主体管理", icon: OfficeBuilding },
   { code: "permissions", label: "主体权限", icon: User },
-  { code: "logs", label: "操作日志", icon: Files },
   { code: "accounts", label: "财务账号", icon: Setting, superAdminOnly: true },
 ];
 
@@ -212,10 +167,10 @@ const statusOptions = computed<Array<{ code: "ALL" | StatusCode; label: string; 
 ]);
 
 const subjects = ref<InvoiceSubject[]>([
-  { id: 1, code: "HZ", name: "杭州主体", status: "ENABLED", titleCount: 1, employeeCount: 186, updatedAt: "2026-08-07 15:46", updatedBy: "王财务", sortNo: 10 },
-  { id: 2, code: "BJ", name: "北京主体", status: "ENABLED", titleCount: 1, employeeCount: 92, updatedAt: "2026-08-06 10:22", updatedBy: "李会计", sortNo: 20 },
-  { id: 3, code: "SH", name: "上海主体", status: "ENABLED", titleCount: 1, employeeCount: 68, updatedAt: "2026-08-03 14:10", updatedBy: "王财务", sortNo: 30 },
-  { id: 4, code: "EAST", name: "华东主体", status: "ENABLED", titleCount: 1, employeeCount: 40, updatedAt: "2026-07-29 09:35", updatedBy: "王财务", sortNo: 40 },
+  { id: 1, code: "HZ", name: "杭州主体", status: "ENABLED", employeeCount: 186, updatedAt: "2026-08-07 15:46", updatedBy: "王财务", sortNo: 10 },
+  { id: 2, code: "BJ", name: "北京主体", status: "ENABLED", employeeCount: 92, updatedAt: "2026-08-06 10:22", updatedBy: "李会计", sortNo: 20 },
+  { id: 3, code: "SH", name: "上海主体", status: "ENABLED", employeeCount: 68, updatedAt: "2026-08-03 14:10", updatedBy: "王财务", sortNo: 30 },
+  { id: 4, code: "EAST", name: "华东主体", status: "ENABLED", employeeCount: 40, updatedAt: "2026-07-29 09:35", updatedBy: "王财务", sortNo: 40 },
 ]);
 
 const permissions = ref<SubjectPermission[]>([
@@ -261,13 +216,6 @@ const permissionProfiles = ref<SubjectPermissionProfile[]>([
     employeeRules: [],
     employeeCount: 12,
   },
-]);
-
-const operationLogs = ref<OperationLog[]>([
-  { id: 1, module: "发票抬头", action: "PUBLISH", businessName: "杭州赛宝卓越技术有限公司", operator: "王财务", result: "SUCCESS", createdAt: "2026-08-07 15:46:12", detail: "发布 V3，并更新杭州主体、华东主体展示数据。" },
-  { id: 2, module: "主体权限", action: "AUTHORIZE", businessName: "杭州主体 / 示例员工", operator: "王财务", result: "SUCCESS", createdAt: "2026-08-07 15:40:03", detail: "授予钉钉用户 ding-employee-001 杭州主体查看权限。" },
-  { id: 3, module: "批量导入", action: "IMPORT", businessName: "invoice-title-20260805.xlsx", operator: "李会计", result: "FAILED", createdAt: "2026-08-05 09:28:42", detail: "成功 12 条，失败 1 条；失败原因为纳税人识别号重复。" },
-  { id: 4, module: "发票抬头", action: "RESTORE", businessName: "杭州赛宝卓越技术有限公司", operator: "王财务", result: "SUCCESS", createdAt: "2026-07-22 11:31:08", detail: "将 V2 恢复为新草稿 V4，未覆盖当前发布版本。" },
 ]);
 
 const importHistory = ref<ImportHistory[]>([
@@ -317,17 +265,6 @@ const importVisible = ref(false);
 const createVisible = ref(false);
 const editingTitleId = ref<number | null>(null);
 const titleSaving = ref(false);
-const detailVisible = ref(false);
-const currentTitle = ref<InvoiceTitle | null>(null);
-const titleVersions = ref<InvoiceTitleVersion[]>([
-  { id: 3, titleId: 1, versionNo: 3, status: "PUBLISHED", companyName: "杭州赛宝卓越技术有限公司", createdBy: "王财务", createdAt: "2026-08-07 15:46" },
-  { id: 2, titleId: 1, versionNo: 2, status: "PUBLISHED", companyName: "杭州赛宝卓越技术有限公司", createdBy: "李会计", createdAt: "2026-07-22 11:30" },
-  { id: 1, titleId: 1, versionNo: 1, status: "PUBLISHED", companyName: "杭州赛宝卓越技术有限公司", createdBy: "王财务", createdAt: "2026-06-18 09:12" },
-]);
-const versionPageNum = ref(1);
-const versionPageSize = ref(10);
-const versionTotal = ref(titleVersions.value.length);
-const versionLoading = ref(false);
 const importFileName = ref("");
 const importFile = ref<File | null>(null);
 const importFileInput = ref<HTMLInputElement | null>(null);
@@ -361,13 +298,6 @@ const selectedDepartmentIds = ref<number[]>([]);
 const employeeEnabledDraft = reactive<Record<number, boolean>>({});
 const employeePermissionStatus = ref<"ALL" | "ENABLED" | "DISABLED">("ALL");
 const selectedPermissionProfileId = ref(1);
-const logPageNum = ref(1);
-const logPageSize = ref(20);
-const logModule = ref("");
-const logKeyword = ref("");
-const logDetailVisible = ref(false);
-const logTotal = ref(operationLogs.value.length);
-const currentLog = ref<OperationLog | null>(null);
 
 const titleForm = reactive({
   companyName: "",
@@ -421,12 +351,6 @@ const filteredPermissions = computed(() => permissions.value.filter((permission)
 const activePermissionProfile = computed<SubjectPermissionProfile | null>(() => permissionProfiles.value.find(
   (profile) => profile.id === selectedPermissionProfileId.value,
 ) ?? permissionProfiles.value[0] ?? null);
-const filteredLogs = computed(() => operationLogs.value.filter((log) => {
-  const value = logKeyword.value.trim().toLowerCase();
-  return (!logModule.value || log.module === logModule.value)
-    && (!value || log.businessName.toLowerCase().includes(value) || log.operator.toLowerCase().includes(value));
-}));
-
 onMounted(() => {
   if (!testMode) void checkAuthentication();
 });
@@ -477,7 +401,6 @@ function toSubject(record: any): InvoiceSubject {
     code: record.subjectCode,
     name: record.subjectName,
     status: record.status,
-    titleCount: record.titleCount ?? 0,
     employeeCount: record.employeeCount ?? 0,
     updatedAt: String(record.updatedAt ?? "").replace("T", " ").slice(0, 16),
     updatedBy: record.updatedBy ?? "-",
@@ -524,33 +447,6 @@ async function loadSubjects() {
     subjectTotal.value = result.total;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "主体列表加载失败");
-  }
-}
-
-async function loadOperationLogs() {
-  if (testMode) return;
-  const query = new URLSearchParams({ pageNum: String(logPageNum.value), pageSize: String(logPageSize.value) });
-  if (logKeyword.value.trim()) query.set("keyword", logKeyword.value.trim());
-  if (logModule.value) query.set("moduleType", logModule.value);
-  const moduleLabels: Record<string, string> = {
-    TITLE: "发票抬头", SUBJECT: "主体管理", PERMISSION: "主体权限", IMPORT: "批量导入", QR: "二维码", ACCOUNT: "财务账号",
-  };
-  try {
-    const response = await fetch(`/api/admin/operation-logs?${query}`, { credentials: "include" });
-    const result = await readApi<{ records: any[]; total: number }>(response, "操作日志加载失败");
-    operationLogs.value = result.records.map((record) => ({
-      id: record.id,
-      module: moduleLabels[record.moduleType] ?? record.moduleType,
-      action: record.operationType,
-      businessName: record.businessName,
-      operator: record.operatorName,
-      result: record.result,
-      createdAt: String(record.createdAt ?? "").replace("T", " ").slice(0, 19),
-      detail: record.detailJson,
-    }));
-    logTotal.value = result.total;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "操作日志加载失败");
   }
 }
 
@@ -639,7 +535,6 @@ function switchMenu(code: MenuCode) {
   if (code === "titles") void loadTitles();
   if (code === "subjects") void loadSubjects();
   if (code === "permissions") void initializePermissionProfiles();
-  if (code === "logs") void loadOperationLogs();
 }
 
 function selectStatus(status: "ALL" | StatusCode) {
@@ -654,49 +549,6 @@ function statusLabel(status: StatusCode) {
 
 function statusClass(status: StatusCode) {
   return `status-${status.toLowerCase()}`;
-}
-
-function openTitle(title: InvoiceTitle) {
-  currentTitle.value = title;
-  detailVisible.value = true;
-  versionPageNum.value = 1;
-  void loadTitleVersions();
-}
-
-async function loadTitleVersions() {
-  if (!currentTitle.value || testMode) return;
-  versionLoading.value = true;
-  try {
-    const query = new URLSearchParams({ pageNum: String(versionPageNum.value), pageSize: String(versionPageSize.value) });
-    const response = await fetch(`/api/admin/invoice-titles/${currentTitle.value.id}/versions?${query}`, { credentials: "include" });
-    const result = await readApi<{ records: any[]; total: number }>(response, "历史版本加载失败");
-    titleVersions.value = result.records.map((record) => ({
-      ...record,
-      createdAt: String(record.createdAt ?? "").replace("T", " ").slice(0, 16),
-    }));
-    versionTotal.value = result.total;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "历史版本加载失败");
-  } finally {
-    versionLoading.value = false;
-  }
-}
-
-async function restoreVersion(version: InvoiceTitleVersion) {
-  if (!currentTitle.value) return;
-  try {
-    const response = await fetch(`/api/admin/invoice-titles/${currentTitle.value.id}/versions/${version.id}/restore`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operatorUserId: currentUser.value?.username ?? "finance" }),
-    });
-    if (!response.ok) await readApi(response, "历史版本恢复失败");
-    ElMessage.success(`V${version.versionNo} 已恢复为新草稿`);
-    if (!testMode) await loadTitleVersions();
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "历史版本恢复失败");
-  }
 }
 
 function openImportDialog() {
@@ -734,15 +586,19 @@ async function submitImport() {
   try {
     const body = new FormData();
     body.append("file", importFile.value);
-    const query = new URLSearchParams({ operatorUserId: "ding-user-finance", operatorName: "王财务" });
-    const response = await fetch(`/api/admin/invoice-imports?${query}`, { method: "POST", body });
-    if (!response.ok) throw new Error("导入请求失败");
-    await loadImportHistory();
+    const response = await fetch("/api/admin/invoice-imports", {
+      method: "POST",
+      credentials: "include",
+      body,
+    });
+    const result = await readApi<ImportHistory>(response, "导入请求失败");
+    await Promise.all([loadImportHistory(), loadTitles(), loadTitleCounts()]);
     importFile.value = null;
     importFileName.value = "";
-    ElMessage.success("校验完成，成功数据已生成草稿");
-  } catch {
-    ElMessage.error("导入失败，请检查后端服务和 Excel 内容");
+    if (importFileInput.value) importFileInput.value.value = "";
+    ElMessage.success(`导入完成：成功 ${result.successCount} 条，失败 ${result.failureCount} 条；成功数据已生成草稿`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "导入失败，请检查后端服务和 Excel 内容");
   } finally {
     importSubmitting.value = false;
   }
@@ -793,9 +649,9 @@ async function saveTitle(status: "DRAFT" | "PUBLISHED") {
     ElMessage.warning("请填写公司名称和纳税人识别号");
     return;
   }
-  const subjectIds = titleForm.subjectIds.length > 0 ? titleForm.subjectIds : (testMode ? [1] : []);
-  if (subjectIds.length === 0) {
-    ElMessage.warning("请至少选择一个展示主体");
+  const subjectIds = [...titleForm.subjectIds];
+  if (status === "PUBLISHED" && subjectIds.length === 0) {
+    ElMessage.warning("保存并发布时请至少选择一个展示主体");
     return;
   }
   titleSaving.value = true;
@@ -1080,10 +936,6 @@ async function applyPermissionSelection() {
   if (await savePermissionConfiguration()) permissionDialogVisible.value = false;
 }
 
-function openLogDetail(log: OperationLog) {
-  currentLog.value = log;
-  logDetailVisible.value = true;
-}
 </script>
 
 <template>
@@ -1114,7 +966,7 @@ function openLogDetail(log: OperationLog) {
 
       <div class="finance-profile" aria-label="当前登录账号">
         <span>{{ profileDisplayName.slice(0, 1) }}</span>
-        <div><strong>{{ profileDisplayName }}</strong><small>{{ profileRoleLabel }}</small></div>
+        <div><strong>{{ profileDisplayName }}</strong></div>
         <button type="button" title="修改我的密码" aria-label="修改我的密码" @click="changePasswordVisible = true"><el-icon><Setting /></el-icon></button>
         <button type="button" title="退出登录" aria-label="退出登录" @click="logout"><el-icon><SwitchButton /></el-icon></button>
       </div>
@@ -1143,7 +995,6 @@ function openLogDetail(log: OperationLog) {
         <section class="summary-grid" aria-label="抬头数据概览">
           <article><span>已发布<small>全部有效</small></span><strong>{{ statusCounts.PUBLISHED }}</strong></article>
           <article><span>草稿<small>待财务复核</small></span><strong>{{ statusCounts.DRAFT }}</strong></article>
-          <article><span>主体<small>已维护展示范围</small></span><strong>{{ subjectTotal }}</strong></article>
         </section>
 
         <section class="status-tabs" aria-label="抬头状态筛选">
@@ -1175,7 +1026,6 @@ function openLogDetail(log: OperationLog) {
                   <td><span class="status" :class="statusClass(title.status)"><i />{{ statusLabel(title.status) }}</span></td>
                   <td>{{ title.updatedAt }}<small>{{ title.updatedBy }}</small></td>
                   <td class="row-actions">
-                    <el-button link type="primary" @click="openTitle(title)">{{ title.status === 'DRAFT' ? '预览' : '查看版本' }}</el-button>
                     <el-button link type="primary" @click="openTitleEditor(title)">编辑</el-button>
                   </td>
                 </tr>
@@ -1209,19 +1059,19 @@ function openLogDetail(log: OperationLog) {
           <el-button type="primary" @click="openSubjectDialog"><el-icon><Plus /></el-icon>新增主体</el-button>
         </section>
         <section class="data-card">
-          <header class="card-header"><div><h2>主体列表</h2><p>停用主体后，关联抬头及二维码将立即停止展示</p></div><span>共 {{ currentSubjectTotal }} 条</span></header>
+          <header class="card-header"><div><h2>主体列表</h2><p>停用主体后，对应抬头及二维码将立即停止展示</p></div><span>共 {{ currentSubjectTotal }} 条</span></header>
           <div class="table-scroll">
             <table>
-              <thead><tr><th>主体名称</th><th>关联抬头</th><th>覆盖员工</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+              <thead><tr><th>主体名称</th><th>覆盖员工</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
               <tbody>
                 <tr v-for="subject in filteredSubjects" :key="subject.id">
                   <td><strong>{{ subject.name }}</strong></td>
-                  <td>{{ subject.titleCount }} 个</td><td>{{ subject.employeeCount }} 人</td>
+                  <td>{{ subject.employeeCount }} 人</td>
                   <td><span class="status" :class="subject.status === 'ENABLED' ? 'status-published' : 'status-disabled'"><i />{{ subject.status === 'ENABLED' ? '启用' : '停用' }}</span></td>
                   <td>{{ subject.updatedAt }}<small>{{ subject.updatedBy }}</small></td>
                   <td class="row-actions"><el-button link type="primary" @click="openSubjectEditor(subject)">编辑</el-button><el-button link type="primary" @click="changeSubjectStatus(subject)">{{ subject.status === 'ENABLED' ? '停用' : '启用' }}</el-button></td>
                 </tr>
-                <tr v-if="filteredSubjects.length === 0"><td class="empty-row" colspan="6">未找到符合条件的主体</td></tr>
+                <tr v-if="filteredSubjects.length === 0"><td class="empty-row" colspan="5">未找到符合条件的主体</td></tr>
               </tbody>
             </table>
           </div>
@@ -1325,34 +1175,6 @@ function openLogDetail(log: OperationLog) {
         @page-change="changeFinanceAccountPage"
       />
 
-      <main v-else class="content">
-        <section class="management-toolbar log-toolbar">
-          <el-select v-model="logModule" clearable placeholder="全部模块">
-            <el-option label="发票抬头" value="TITLE" /><el-option label="主体权限" value="PERMISSION" /><el-option label="批量导入" value="IMPORT" /><el-option label="财务账号" value="ACCOUNT" />
-          </el-select>
-          <el-input v-model="logKeyword" clearable placeholder="搜索业务对象或操作人" :prefix-icon="Search" @keyup.enter="logPageNum = 1; loadOperationLogs()" />
-          <span />
-          <el-button type="primary" @click="logPageNum = 1; loadOperationLogs()">查询日志</el-button>
-        </section>
-        <section class="data-card">
-          <header class="card-header"><div><h2>操作日志</h2><p>关键维护动作留痕，不允许人工删除</p></div><span>共 {{ logTotal }} 条</span></header>
-          <div class="table-scroll">
-            <table>
-              <thead><tr><th>操作时间</th><th>业务模块</th><th>操作类型</th><th>业务对象</th><th>操作人</th><th>结果</th><th>操作</th></tr></thead>
-              <tbody>
-                <tr v-for="log in filteredLogs" :key="log.id">
-                  <td>{{ log.createdAt }}</td><td>{{ log.module }}</td><td><strong>{{ formatOperationType(log.action) }}</strong></td><td>{{ log.businessName }}</td><td>{{ log.operator }}</td>
-                  <td><span class="status" :class="log.result === 'SUCCESS' ? 'status-published' : 'status-draft'"><i />{{ log.result === 'SUCCESS' ? '成功' : '失败' }}</span></td>
-                  <td><el-button link type="primary" @click="openLogDetail(log)">查看详情</el-button></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <footer class="pagination-row" aria-label="操作日志列表分页">
-            <el-pagination v-model:current-page="logPageNum" v-model:page-size="logPageSize" :page-sizes="[10,20,50,100]" :total="logTotal" layout="total, sizes, prev, pager, next, jumper" background @current-change="loadOperationLogs" @size-change="logPageNum = 1; loadOperationLogs()" />
-          </footer>
-        </section>
-      </main>
     </section>
 
     <el-dialog v-model="importVisible" title="批量导入抬头" width="620px">
@@ -1362,7 +1184,7 @@ function openLogDetail(log: OperationLog) {
             <input ref="importFileInput" class="visually-hidden-input" type="file" accept=".xlsx" @click.stop @change="handleImportFileChange" />
             <el-icon><Upload /></el-icon>
             <strong>{{ importFileName || '点击选择 Excel 文件' }}</strong>
-            <p>支持 .xlsx，单次最多 1,000 条；导入后先生成草稿。</p>
+            <p>支持 .xlsx，单次最多 1,000 条；仅导入抬头信息，不包含主体，导入后生成草稿。</p>
           </div>
           <el-button link type="primary" tag="a" :href="importTemplateUrl"><el-icon><Download /></el-icon>下载导入模板</el-button>
         </el-tab-pane>
@@ -1399,7 +1221,7 @@ function openLogDetail(log: OperationLog) {
           <el-form-item label="电话"><el-input v-model="titleForm.phone" placeholder="请输入联系电话" /></el-form-item>
           <el-form-item label="开户行"><el-input v-model="titleForm.bankName" placeholder="请输入开户银行" /></el-form-item>
           <el-form-item label="银行账号"><el-input v-model="titleForm.bankAccount" placeholder="请输入银行账号" /></el-form-item>
-          <el-form-item label="展示主体">
+          <el-form-item label="展示主体（可后期选择）">
             <el-select v-model="titleForm.subjectIds" multiple collapse-tags placeholder="可选择一个或多个主体">
               <el-option v-for="subject in subjects.filter((item) => item.status === 'ENABLED')" :key="subject.id" :label="subject.name" :value="subject.id" />
             </el-select>
@@ -1412,25 +1234,6 @@ function openLogDetail(log: OperationLog) {
         <el-button type="primary" :loading="titleSaving" @click="saveTitle('PUBLISHED')">保存并发布</el-button>
       </template>
     </el-dialog>
-
-    <el-drawer v-model="detailVisible" title="版本记录" size="520px">
-      <section v-if="currentTitle" v-loading="versionLoading" class="version-panel">
-        <h3>{{ currentTitle.companyName }}</h3>
-        <p>{{ currentTitle.taxpayerId }}</p>
-        <ol>
-          <li v-for="(version, index) in titleVersions" :key="version.id">
-            <span><strong>V{{ version.versionNo }}{{ version.status === 'PUBLISHED' && index === 0 ? ' · 当前发布版本' : version.status === 'DRAFT' ? ' · 草稿' : '' }}</strong><small>{{ version.createdAt }} · {{ version.createdBy }}</small></span>
-            <el-tag v-if="version.status === 'PUBLISHED' && index === 0" type="success">已发布</el-tag>
-            <el-tag v-else-if="version.status === 'DRAFT'" type="warning">草稿</el-tag>
-            <el-button v-else link type="primary" @click="restoreVersion(version)">恢复为草稿</el-button>
-          </li>
-        </ol>
-        <div aria-label="历史版本列表分页" class="history-pagination">
-          <el-pagination v-model:current-page="versionPageNum" v-model:page-size="versionPageSize" :total="versionTotal" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" small @current-change="loadTitleVersions" @size-change="versionPageNum = 1; loadTitleVersions()" />
-        </div>
-        <p class="restore-note"><el-icon><Clock /></el-icon>恢复历史版本会新建草稿，不会覆盖当前已发布版本。</p>
-      </section>
-    </el-drawer>
 
     <el-dialog v-model="subjectDialogVisible" :title="editingSubjectId ? '编辑主体' : '新增主体'" width="520px">
       <el-form label-position="top">
@@ -1479,13 +1282,6 @@ function openLogDetail(log: OperationLog) {
       </section>
       <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" @click="applyPermissionSelection">确定选择</el-button></template>
     </el-dialog>
-
-    <el-drawer v-model="logDetailVisible" title="操作日志详情" size="500px">
-      <section v-if="currentLog" class="log-detail">
-        <dl><dt>操作时间</dt><dd>{{ currentLog.createdAt }}</dd><dt>业务模块</dt><dd>{{ currentLog.module }}</dd><dt>操作类型</dt><dd>{{ formatOperationType(currentLog.action) }}</dd><dt>业务对象</dt><dd>{{ currentLog.businessName }}</dd><dt>操作人</dt><dd>{{ currentLog.operator }}</dd><dt>执行结果</dt><dd>{{ currentLog.result === 'SUCCESS' ? '成功' : '失败' }}</dd></dl>
-        <h3>操作说明</h3><p>{{ currentLog.detail }}</p>
-      </section>
-    </el-drawer>
 
     <ChangePasswordDialog v-model="changePasswordVisible" />
   </div>

@@ -67,11 +67,11 @@ class FinanceAdministrationCrudWebTest {
                 {"companyName":"上线编辑测试有限公司","taxpayerId":"91330100ONLINE0001",
                  "registeredAddress":"杭州市钱塘区修改路2号","phone":"0571-66666666",
                  "bankName":"宁波银行杭州分行","bankAccount":"009999999999",
-                 "subjectIds":[1,2],"status":"PUBLISHED"}
+                 "subjectIds":[],"status":"DRAFT"}
                 """);
         assertThat(updated.statusCode()).isEqualTo(200);
         assertThat(get(administrator, "/api/admin/invoice-titles/" + titleId).body())
-                .contains("上线编辑测试有限公司", "\"status\":\"PUBLISHED\"", "\"subjectIds\":[1,2]");
+                .contains("上线编辑测试有限公司", "\"status\":\"DRAFT\"", "\"subjectIds\":[]");
     }
 
     @Test

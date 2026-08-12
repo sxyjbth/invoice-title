@@ -8,6 +8,8 @@ import AdminApp from "../src/App.vue";
 import { elementPlusOptions } from "../src/element-plus";
 
 const adminStyles = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+const adminIndex = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
+const adminSource = readFileSync(resolve(process.cwd(), "src/App.vue"), "utf8");
 
 const global = { plugins: [[ElementPlus, elementPlusOptions]] } as any;
 
@@ -17,6 +19,11 @@ afterEach(() => {
 });
 
 describe("财务端发票抬头管理", () => {
+  it("使用发票抬头项目专属图标文件，避免沿用同一 IP 下其他项目的缓存图标", () => {
+    expect(adminIndex).toContain("invoice-title-finance-icon-v1.svg");
+    expect(adminIndex).not.toContain('href="%BASE_URL%favicon.svg"');
+  });
+
   it("原生列表表格样式不影响弹窗内的 Element Plus 表格", () => {
     expect(adminStyles).not.toMatch(/(?:^|})\s*table\s*{/m);
     expect(adminStyles).toContain(".table-scroll table { width: 100%; min-width: 1030px;");
@@ -34,12 +41,20 @@ describe("财务端发票抬头管理", () => {
     expect(wrapper.get(".topbar").text()).not.toContain("钉钉通讯录已同步");
   });
 
-  it("登录账号名称与角色相同时使用用户名区分两行信息", () => {
+  it("左下角只展示登录账号名称，不展示角色副标题", () => {
     const wrapper = mount(AdminApp, { global });
     const profile = wrapper.get('[aria-label="当前登录账号"]');
 
     expect(profile.get("strong").text()).toBe("superadmin");
-    expect(profile.get("small").text()).toBe("超级管理员");
+    expect(profile.find("small").exists()).toBe(false);
+  });
+
+  it("抬头概览只展示已发布和草稿，不展示主体统计卡片", () => {
+    const wrapper = mount(AdminApp, { global });
+    const summary = wrapper.get('[aria-label="抬头数据概览"]');
+
+    expect(summary.findAll("article")).toHaveLength(2);
+    expect(summary.text()).not.toContain("已维护展示范围");
   });
 
   it("批量导入只作为抬头管理页面操作而不是一级导航", () => {
@@ -99,14 +114,34 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
-  it("历史版本列表使用分页且恢复入口不再是静态占位", async () => {
+  it("保存草稿允许不选择主体，发布时仍要求选择主体", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("99", { status: 200 }));
     const wrapper = mount(AdminApp, { global, attachTo: document.body });
-    await wrapper.findAll("tbody tr")[0].findAll("button").find((item) => item.text().includes("查看版本"))!.trigger("click");
+    await wrapper.findAll("button").find((item) => item.text().includes("新增抬头"))!.trigger("click");
     await nextTick();
 
-    expect(document.body.querySelector('[aria-label="历史版本列表分页"]')).not.toBeNull();
-    expect(document.body.textContent).toContain("恢复为草稿");
+    const dialogInputs = Array.from(document.body.querySelectorAll<HTMLInputElement>(".el-dialog input"));
+    dialogInputs[0].value = "待绑定主体有限公司";
+    dialogInputs[0].dispatchEvent(new Event("input"));
+    dialogInputs[1].value = "91330100NOSUBJECTUI";
+    dialogInputs[1].dispatchEvent(new Event("input"));
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("保存草稿"))!.click();
+    await flushPromises();
+
+    expect(request).toHaveBeenCalledWith("/api/admin/invoice-titles", expect.objectContaining({
+      body: expect.stringContaining('"subjectIds":[]'),
+    }));
     wrapper.unmount();
+  });
+
+  it("抬头管理不展示版本查看或预览功能，版本仍由后端写入数据库", () => {
+    const wrapper = mount(AdminApp, { global });
+
+    expect(wrapper.get("tbody").text()).not.toContain("查看版本");
+    expect(wrapper.get("tbody").text()).not.toContain("预览");
+    expect(adminSource).not.toContain("/versions");
+    expect(adminSource).not.toContain("版本记录");
   });
 
   it("主体管理展示可维护的主体列表并使用分页", async () => {
@@ -115,6 +150,7 @@ describe("财务端发票抬头管理", () => {
 
     expect(wrapper.get("tbody").text()).toContain("杭州主体");
     expect(wrapper.get("main").text()).not.toContain("主体编码");
+    expect(wrapper.get("main").text()).not.toContain("关联抬头");
     expect(wrapper.find('input[placeholder="搜索主体名称"]').exists()).toBe(true);
     expect(wrapper.find('[aria-label="主体管理列表分页"]').exists()).toBe(true);
   });
@@ -359,35 +395,12 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
-  it("操作日志展示可追溯的业务操作并使用分页", async () => {
+  it("财务端不展示操作日志入口和页面，日志仍由后端写入数据库", () => {
     const wrapper = mount(AdminApp, { global });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("操作日志"))!.trigger("click");
 
-    expect(wrapper.get("tbody").text()).toContain("发布抬头");
-    expect(wrapper.get("tbody").text()).toContain("王财务");
-    expect(wrapper.find('[aria-label="操作日志列表分页"]').exists()).toBe(true);
-  });
-
-  it("操作日志将操作类型代码显示为中文", async () => {
-    const wrapper = mount(AdminApp, { global });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("操作日志"))!.trigger("click");
-
-    (wrapper.vm as any).operationLogs[0].action = "CHANGE_PASSWORD";
-    await nextTick();
-
-    expect(wrapper.get("tbody").text()).toContain("修改密码");
-    expect(wrapper.get("tbody").text()).not.toContain("CHANGE_PASSWORD");
-  });
-
-  it("操作日志列表和详情均不展示客户端 IP", async () => {
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("操作日志"))!.trigger("click");
-
-    expect(wrapper.get("main").text()).not.toContain("客户端 IP");
-    await wrapper.findAll("tbody button")[0].trigger("click");
-    await nextTick();
-    expect(document.body.textContent).not.toContain("客户端 IP");
-    wrapper.unmount();
+    expect(wrapper.get("nav").text()).not.toContain("操作日志");
+    expect(adminSource).not.toContain("/api/admin/operation-logs");
+    expect(adminSource).not.toContain("操作日志详情");
   });
 
   it("财务账号接口返回 401 时退出失效会话并显示登录页", async () => {
@@ -424,6 +437,25 @@ describe("财务端发票抬头管理", () => {
 
     expect(document.body.querySelector('input[type="file"][accept=".xlsx"]')).not.toBeNull();
     expect(document.body.querySelector('[aria-label="导入历史分页"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("仅导入抬头信息，不包含主体");
     wrapper.unmount();
+  });
+
+  it("批量导入提交当前文件并使用登录账号，成功后刷新抬头数据", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      id: 1, taskNo: "IMP-1", status: "COMPLETED", totalCount: 1, successCount: 1, failureCount: 0,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const wrapper = mount(AdminApp, { global });
+    (wrapper.vm as any).importFile = new File(["xlsx"], "titles.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    await (wrapper.vm as any).submitImport();
+
+    expect(request).toHaveBeenCalledWith("/api/admin/invoice-imports", expect.objectContaining({
+      method: "POST",
+      credentials: "include",
+      body: expect.any(FormData),
+    }));
   });
 });

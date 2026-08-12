@@ -12,6 +12,7 @@ public interface InvoiceSubjectMapper {
     List<InvoiceSubject> selectPage(SubjectPageQueryDTO query);
     InvoiceSubject selectById(@Param("id") Long id);
     List<InvoiceSubject> selectByIds(@Param("ids") List<Long> ids);
+    List<InvoiceSubject> selectByIdsForUpdate(@Param("ids") List<Long> ids);
     InvoiceSubject selectByCode(@Param("subjectCode") String subjectCode);
     InvoiceSubject selectByName(@Param("subjectName") String subjectName);
     int insert(InvoiceSubject subject);

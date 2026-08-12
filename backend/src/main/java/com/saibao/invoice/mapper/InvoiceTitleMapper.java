@@ -1,6 +1,7 @@
 package com.saibao.invoice.mapper;
 
 import com.saibao.invoice.domain.InvoiceTitle;
+import com.saibao.invoice.domain.PublishedSubjectBinding;
 import com.saibao.invoice.dto.InvoiceTitlePageQueryDTO;
 import org.apache.ibatis.annotations.Param;
 
@@ -13,6 +14,9 @@ public interface InvoiceTitleMapper {
     InvoiceTitle selectById(@Param("id") Long id);
     InvoiceTitle selectByTaxpayerId(@Param("taxpayerId") String taxpayerId);
     List<Long> selectSubjectIds(@Param("titleId") Long titleId);
+    List<PublishedSubjectBinding> selectPublishedSubjectBindings(
+            @Param("subjectIds") List<Long> subjectIds,
+            @Param("excludeTitleId") Long excludeTitleId);
     int insert(InvoiceTitle title);
     int update(InvoiceTitle title);
     int insertTitleSubject(@Param("titleId") Long titleId, @Param("subjectId") Long subjectId, @Param("createdBy") String createdBy);

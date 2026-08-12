@@ -97,7 +97,7 @@ public class InvoiceSubjectServiceImpl implements IInvoiceSubjectService {
     private InvoiceSubjectVO toVO(InvoiceSubject source) {
         InvoiceSubjectVO vo = new InvoiceSubjectVO();
         vo.setId(source.getId()); vo.setSubjectCode(source.getSubjectCode()); vo.setSubjectName(source.getSubjectName());
-        vo.setStatus(source.getStatus()); vo.setSortNo(source.getSortNo()); vo.setTitleCount(source.getTitleCount());
+        vo.setStatus(source.getStatus()); vo.setSortNo(source.getSortNo());
         vo.setEmployeeCount(source.getEmployeeCount()); vo.setUpdatedBy(source.getUpdatedBy()); vo.setUpdatedAt(source.getUpdatedAt());
         return vo;
     }

@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.saibao.invoice.domain.InvoiceImportRowError;
 import com.saibao.invoice.domain.InvoiceImportTask;
-import com.saibao.invoice.domain.InvoiceSubject;
 import com.saibao.invoice.domain.InvoiceTitle;
 import com.saibao.invoice.domain.InvoiceTitleVersion;
 import com.saibao.invoice.domain.OperationLog;
@@ -12,7 +11,6 @@ import com.saibao.invoice.dto.ImportRowErrorPageQueryDTO;
 import com.saibao.invoice.dto.ImportTaskPageQueryDTO;
 import com.saibao.invoice.enums.InvoiceTitleStatusEnum;
 import com.saibao.invoice.mapper.InvoiceImportTaskMapper;
-import com.saibao.invoice.mapper.InvoiceSubjectMapper;
 import com.saibao.invoice.mapper.InvoiceTitleMapper;
 import com.saibao.invoice.mapper.InvoiceTitleVersionMapper;
 import com.saibao.invoice.mapper.OperationLogMapper;
@@ -40,7 +38,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -57,16 +54,13 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
 
     private static final int MAX_ROWS = 1000;
     private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
-    private static final String SUBJECT_HEADER = "展示主体";
-    private static final String LEGACY_SUBJECT_HEADER = "展示主体编码";
     private static final List<String> HEADERS = List.of(
-            "公司名称", "纳税人识别号", "注册地址", "电话", "开户行", "银行账号", SUBJECT_HEADER
+            "公司名称", "纳税人识别号", "注册地址", "电话", "开户行", "银行账号"
     );
 
     private final InvoiceImportTaskMapper importTaskMapper;
     private final InvoiceTitleMapper invoiceTitleMapper;
     private final InvoiceTitleVersionMapper versionMapper;
-    private final InvoiceSubjectMapper subjectMapper;
     private final OperationLogMapper operationLogMapper;
     /** POI 依赖已包含 Jackson 2；这里使用私有实例，避免影响 Spring Boot 4 的 Jackson 3 全局配置。 */
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -140,7 +134,7 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
                     failure++;
                     continue;
                 }
-                createDraft(values, validation.subjects(), operatorUserId);
+                createDraft(values, operatorUserId);
                 taxpayerIdsInFile.add(values.get("纳税人识别号"));
                 success++;
             }
@@ -175,7 +169,7 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
             Row example = sheet.createRow(1);
             String[] values = {"杭州赛宝卓越技术有限公司", "91110400MADFF1HE1T",
                     "浙江省杭州市钱塘区临江街道纬五路3688号临江科创园6号楼12楼", "4008696096",
-                    "宁波银行股份有限公司北京丰台支行", "86041110000957180", "杭州主体"};
+                    "宁波银行股份有限公司北京丰台支行", "86041110000957180"};
             for (int index = 0; index < values.length; index++) {
                 example.createCell(index).setCellValue(values[index]);
             }
@@ -232,9 +226,6 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
         for (Cell cell : headerRow) {
             columns.put(formatter.formatCellValue(cell).trim(), cell.getColumnIndex());
         }
-        if (!columns.containsKey(SUBJECT_HEADER) && columns.containsKey(LEGACY_SUBJECT_HEADER)) {
-            columns.put(SUBJECT_HEADER, columns.get(LEGACY_SUBJECT_HEADER));
-        }
         List<String> missing = HEADERS.stream().filter(header -> !columns.containsKey(header)).toList();
         if (!missing.isEmpty()) {
             throw new IllegalArgumentException("Excel 缺少表头：" + String.join("、", missing));
@@ -275,33 +266,10 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
         if (taxpayerIdsInFile.contains(taxpayerId) || invoiceTitleMapper.selectByTaxpayerId(taxpayerId) != null) {
             return RowValidation.error("DUPLICATE_TAXPAYER_ID", "纳税人识别号已存在或在当前文件中重复");
         }
-        String subjectNames = values.get(SUBJECT_HEADER);
-        if (subjectNames.isBlank()) {
-            return RowValidation.error("REQUIRED_MISSING", "展示主体不能为空");
-        }
-        List<InvoiceSubject> subjects = new ArrayList<>();
-        for (String name : subjectNames.split("[,，;；]")) {
-            String normalized = name.trim();
-            if (normalized.isEmpty()) {
-                continue;
-            }
-            InvoiceSubject subject = subjectMapper.selectByName(normalized);
-            if (subject == null) subject = subjectMapper.selectByCode(normalized);
-            if (subject == null || !"ENABLED".equals(subject.getStatus())) {
-                return RowValidation.error("SUBJECT_NOT_FOUND", "展示主体不存在或已停用：" + normalized);
-            }
-            Long subjectId = subject.getId();
-            if (subjects.stream().noneMatch(existing -> existing.getId().equals(subjectId))) {
-                subjects.add(subject);
-            }
-        }
-        if (subjects.isEmpty()) {
-            return RowValidation.error("SUBJECT_NOT_FOUND", "未找到可用的展示主体");
-        }
-        return RowValidation.success(subjects);
+        return RowValidation.success();
     }
 
-    private void createDraft(Map<String, String> values, List<InvoiceSubject> subjects, String operatorUserId) {
+    private void createDraft(Map<String, String> values, String operatorUserId) {
         LocalDateTime now = LocalDateTime.now();
         InvoiceTitle title = new InvoiceTitle();
         title.setCompanyName(values.get("公司名称"));
@@ -311,16 +279,12 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
         title.setBankName(blankToNull(values.get("开户行")));
         title.setBankAccount(blankToNull(values.get("银行账号")));
         title.setStatus(InvoiceTitleStatusEnum.DRAFT.getCode());
-        title.setSubjectNames(String.join(",", subjects.stream().map(InvoiceSubject::getSubjectName).toList()));
+        title.setSubjectNames("");
         title.setCreatedBy(operatorUserId);
         title.setCreatedAt(now);
         title.setUpdatedBy(operatorUserId);
         title.setUpdatedAt(now);
         invoiceTitleMapper.insert(title);
-
-        for (InvoiceSubject subject : subjects) {
-            invoiceTitleMapper.insertTitleSubject(title.getId(), subject.getId(), operatorUserId);
-        }
 
         InvoiceTitleVersion version = new InvoiceTitleVersion();
         version.setTitleId(title.getId());
@@ -334,7 +298,7 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
         version.setPhone(title.getPhone());
         version.setBankName(title.getBankName());
         version.setBankAccount(title.getBankAccount());
-        version.setSubjectIdsJson(toJson(subjects.stream().map(InvoiceSubject::getId).toList()));
+        version.setSubjectIdsJson("[]");
         version.setCreatedBy(operatorUserId);
         version.setCreatedAt(now);
         versionMapper.insert(version);
@@ -428,13 +392,13 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
         return vo;
     }
 
-    private record RowValidation(boolean valid, String errorCode, String message, List<InvoiceSubject> subjects) {
+    private record RowValidation(boolean valid, String errorCode, String message) {
         static RowValidation error(String code, String message) {
-            return new RowValidation(false, code, message, List.of());
+            return new RowValidation(false, code, message);
         }
 
-        static RowValidation success(List<InvoiceSubject> subjects) {
-            return new RowValidation(true, null, null, subjects);
+        static RowValidation success() {
+            return new RowValidation(true, null, null);
         }
     }
 }

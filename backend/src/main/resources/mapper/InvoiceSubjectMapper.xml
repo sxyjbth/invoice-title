@@ -15,7 +15,6 @@
 
     <select id="selectPage" resultType="com.saibao.invoice.domain.InvoiceSubject">
         SELECT s.id, s.subject_code, s.subject_name, s.status, s.sort_no, s.updated_by, s.updated_at,
-               (SELECT COUNT(*) FROM invoice_title_subject its WHERE its.subject_id = s.id) AS title_count,
                (SELECT COUNT(*) FROM subject_permission p WHERE p.subject_id = s.id AND p.deleted = 0 AND p.status = 'ENABLED') AS employee_count
         FROM invoice_subject s
         <include refid="conditions"/>
@@ -49,6 +48,16 @@
         WHERE deleted = 0 AND id IN
         <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         ORDER BY sort_no ASC, id ASC
+    </select>
+
+    <!-- 发布前锁定目标主体，确保并发发布也不会绕过一主体一有效抬头约束。 -->
+    <select id="selectByIdsForUpdate" resultType="com.saibao.invoice.domain.InvoiceSubject">
+        SELECT id, subject_code, subject_name, status, sort_no, created_by, created_at, updated_by, updated_at
+        FROM invoice_subject
+        WHERE deleted = 0 AND id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY sort_no ASC, id ASC
+        FOR UPDATE
     </select>
 
     <insert id="insert" parameterType="com.saibao.invoice.domain.InvoiceSubject" useGeneratedKeys="true" keyProperty="id">

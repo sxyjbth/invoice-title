@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { ArrowLeft, CopyDocument, Grid, Refresh, Close } from "@element-plus/icons-vue";
+import { CopyDocument, Grid, Refresh, Close } from "@element-plus/icons-vue";
 import QRCode from "qrcode";
-import closeNavigationApi from "dingtalk-jsapi/api/biz/navigation/close";
 import { requestDingTalkAuthCode } from "./dingTalkAuth";
 
 type InvoiceTitle = {
@@ -29,6 +28,7 @@ const qrVisible = ref(false);
 const seconds = ref(600);
 const toast = ref("");
 const qrImageUrl = ref("");
+const qrSnapshotMode = computed(() => Boolean(new URLSearchParams(window.location.search).get("qrToken")));
 let countdownTimer: number | undefined;
 let toastTimer: number | undefined;
 
@@ -178,12 +178,6 @@ async function refreshQr() {
   notify("二维码已刷新，有效期重新计时");
 }
 
-function returnWorkbench() {
-  const close = (window as any).dd?.biz?.navigation?.close || closeNavigationApi;
-  if (typeof close === "function") close({});
-  else window.history.back();
-}
-
 watch(selectedSubject, () => closeQr());
 onMounted(initialize);
 onBeforeUnmount(() => {
@@ -194,14 +188,9 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="employee-app">
-    <header class="employee-header">
+    <header v-if="!qrSnapshotMode" class="employee-header">
       <div class="toolbar">
-        <button type="button" class="back-button" @click="returnWorkbench">
-          <el-icon><ArrowLeft /></el-icon>
-          返回工作台
-        </button>
         <strong>发票抬头</strong>
-        <span aria-hidden="true" />
       </div>
 
       <div v-if="subjects.length" class="subject-selector" aria-label="选择主体">
@@ -247,7 +236,7 @@ onBeforeUnmount(() => {
           <el-icon><CopyDocument /></el-icon>
           复制全部
         </el-button>
-        <el-button data-testid="show-qr" plain type="primary" size="large" @click="openQr">
+        <el-button v-if="!qrSnapshotMode" data-testid="show-qr" plain type="primary" size="large" @click="openQr">
           <el-icon><Grid /></el-icon>
           展示二维码
         </el-button>

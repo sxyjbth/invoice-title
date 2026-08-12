@@ -29,11 +29,16 @@ class DeploymentContractTest(unittest.TestCase):
 
         self.assertEqual(2, config.count("default_type text/html;"))
         self.assertIn("location = /invoice/employee/favicon.svg", config)
-        self.assertIn("location = /invoice/finance/favicon.svg", config)
+        self.assertIn("location = /invoice/finance/invoice-title-finance-icon-v1.svg", config)
         self.assertIn('rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg"', employee_html)
-        self.assertIn('rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg"', finance_html)
+        self.assertIn(
+            'rel="icon" type="image/svg+xml" href="%BASE_URL%invoice-title-finance-icon-v1.svg"',
+            finance_html,
+        )
         self.assertTrue((PROJECT_ROOT / "frontend/employee-h5/public/favicon.svg").is_file())
-        self.assertTrue((PROJECT_ROOT / "frontend/finance-admin/public/favicon.svg").is_file())
+        self.assertTrue(
+            (PROJECT_ROOT / "frontend/finance-admin/public/invoice-title-finance-icon-v1.svg").is_file()
+        )
 
     def test_backend_service_uses_java21_local_bind_and_isolated_user(self):
         service = (PROJECT_ROOT / "deploy/systemd/invoice-title.service").read_text(encoding="utf-8")

@@ -2,7 +2,7 @@ package com.saibao.invoice.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -39,8 +39,8 @@ public class InvoiceTitleSaveDTO {
     @Schema(description = "银行账号，按字符串保存")
     private String bankAccount;
 
-    @NotEmpty(message = "至少选择一个展示主体")
-    @Schema(description = "展示主体 ID 列表", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotNull(message = "展示主体字段不能为空；草稿可传空数组")
+    @Schema(description = "展示主体 ID 列表；草稿可传空数组，发布时至少选择一个主体", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<Long> subjectIds;
 
     @NotBlank(message = "抬头状态不能为空")

@@ -61,6 +61,15 @@ describe("员工端发票抬头", () => {
     });
   }
 
+  it("顶部只展示居中的发票抬头，不展示返回工作台入口", async () => {
+    mockEmployeeApis();
+    const wrapper = mount(EmployeeApp, { global });
+    await flushPromises();
+
+    expect(wrapper.get(".toolbar").text()).toBe("发票抬头");
+    expect(wrapper.find(".back-button").exists()).toBe(false);
+  });
+
   it("通过钉钉免登后展示服务端授权抬头，不向接口传员工身份", async () => {
     const request = mockEmployeeApis();
     const wrapper = mount(EmployeeApp, { global });
@@ -167,5 +176,8 @@ describe("员工端发票抬头", () => {
     expect(wrapper.text()).toContain("杭州赛宝卓越技术有限公司");
     expect(request).toHaveBeenCalledWith("/api/employee/invoice-titles/qr/public-token", expect.any(Object));
     expect(request.mock.calls.some(([url]) => String(url).includes("/api/employee/auth/dingtalk"))).toBe(false);
+    expect(wrapper.find(".employee-header").exists()).toBe(false);
+    expect(wrapper.find(".subject-selector").exists()).toBe(false);
+    expect(wrapper.find('[data-testid="show-qr"]').exists()).toBe(false);
   });
 });
