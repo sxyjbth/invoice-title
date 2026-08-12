@@ -1,9 +1,13 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import AdminApp from "../src/App.vue";
 import { elementPlusOptions } from "../src/element-plus";
+
+const adminStyles = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
 
 const global = { plugins: [[ElementPlus, elementPlusOptions]] } as any;
 
@@ -13,6 +17,11 @@ afterEach(() => {
 });
 
 describe("财务端发票抬头管理", () => {
+  it("原生列表表格样式不影响弹窗内的 Element Plus 表格", () => {
+    expect(adminStyles).not.toMatch(/(?:^|})\s*table\s*{/m);
+    expect(adminStyles).toContain(".table-scroll table { width: 100%; min-width: 1030px;");
+  });
+
   it("页面标题区域不再展示钉钉工作台面包屑", () => {
     const wrapper = mount(AdminApp, { global });
 
@@ -218,6 +227,76 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
+  it("员工授权弹窗确认选择后立即保存个人权限", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ records: [{
+      id: 99,
+      corpCode: "sebo",
+      corpName: "赛宝绿创能源技术（上海）有限公司",
+      dingUserId: "ding-sun-xinyao",
+      employeeNo: "R04952",
+      employeeName: "孙鑫尧",
+      departmentId: 99,
+      departmentName: "平台开发部",
+      mobile: "13936725713",
+      permissionEnabled: false,
+    }], total: 1 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    const wrapper = mount(AdminApp, { global, attachTo: document.body });
+    await wrapper.findAll("nav button").find((item) => item.text().includes("主体权限"))!.trigger("click");
+
+    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
+    await permissionPage.findAll("button").find((item) => item.text().includes("编辑") && item.element.closest(".permission-level-row")?.textContent?.includes("员工授权"))!.trigger("click");
+    await flushPromises();
+    (document.body.querySelector('[aria-label="孙鑫尧的查看权限"]') as HTMLElement).click();
+    await nextTick();
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("确定选择"))!.click();
+    await flushPromises();
+
+    expect(request).toHaveBeenCalledWith("/api/admin/subjects/1/permission-profile", expect.objectContaining({
+      method: "PUT",
+      body: expect.stringContaining('"employeeId":99,"effect":"ALLOW"'),
+    }));
+    wrapper.unmount();
+  });
+
+  it("后端 employeeId 字段返回的既有员工授权可以正确回显", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ records: [{
+      id: 99,
+      corpCode: "sebo",
+      corpName: "赛宝绿创能源技术（上海）有限公司",
+      dingUserId: "ding-sun-xinyao",
+      employeeNo: "R04952",
+      employeeName: "孙鑫尧",
+      departmentId: 99,
+      departmentName: "平台开发部",
+      mobile: "13936725713",
+      permissionEnabled: true,
+    }], total: 1 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    const wrapper = mount(AdminApp, { global, attachTo: document.body });
+    await wrapper.findAll("nav button").find((item) => item.text().includes("主体权限"))!.trigger("click");
+    (wrapper.vm as any).permissionProfiles[0].employeeRules = [{
+      employeeId: 99,
+      employeeName: "孙鑫尧",
+      employeeNo: "R04952",
+      dingUserId: "ding-sun-xinyao",
+      departmentName: "平台开发部",
+      effect: "ALLOW",
+    }];
+
+    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
+    await permissionPage.findAll("button").find((item) => item.text().includes("编辑") && item.element.closest(".permission-level-row")?.textContent?.includes("员工授权"))!.trigger("click");
+    await flushPromises();
+
+    expect(document.body.querySelector('[aria-label="孙鑫尧的查看权限"]')?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
+    wrapper.unmount();
+  });
+
   it("操作日志展示可追溯的业务操作并使用分页", async () => {
     const wrapper = mount(AdminApp, { global });
     await wrapper.findAll("nav button").find((item) => item.text().includes("操作日志"))!.trigger("click");
@@ -225,6 +304,44 @@ describe("财务端发票抬头管理", () => {
     expect(wrapper.get("tbody").text()).toContain("发布抬头");
     expect(wrapper.get("tbody").text()).toContain("王财务");
     expect(wrapper.find('[aria-label="操作日志列表分页"]').exists()).toBe(true);
+  });
+
+  it("操作日志将操作类型代码显示为中文", async () => {
+    const wrapper = mount(AdminApp, { global });
+    await wrapper.findAll("nav button").find((item) => item.text().includes("操作日志"))!.trigger("click");
+
+    (wrapper.vm as any).operationLogs[0].action = "CHANGE_PASSWORD";
+    await nextTick();
+
+    expect(wrapper.get("tbody").text()).toContain("修改密码");
+    expect(wrapper.get("tbody").text()).not.toContain("CHANGE_PASSWORD");
+  });
+
+  it("操作日志列表和详情均不展示客户端 IP", async () => {
+    const wrapper = mount(AdminApp, { global, attachTo: document.body });
+    await wrapper.findAll("nav button").find((item) => item.text().includes("操作日志"))!.trigger("click");
+
+    expect(wrapper.get("main").text()).not.toContain("客户端 IP");
+    await wrapper.findAll("tbody button")[0].trigger("click");
+    await nextTick();
+    expect(document.body.textContent).not.toContain("客户端 IP");
+    wrapper.unmount();
+  });
+
+  it("财务账号接口返回 401 时退出失效会话并显示登录页", async () => {
+    const wrapper = mount(AdminApp, { global });
+    const handleFinanceAccountResponse = (wrapper.vm as any).handleFinanceAccountResponse;
+
+    expect(handleFinanceAccountResponse).toBeTypeOf("function");
+    if (!handleFinanceAccountResponse) return;
+
+    await handleFinanceAccountResponse(new Response('{"message":"请先登录财务管理端"}', {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    }));
+    await nextTick();
+
+    expect(wrapper.find(".login-page").exists()).toBe(true);
   });
 
   it("批量导入使用真实文件选择并为导入历史提供分页", async () => {

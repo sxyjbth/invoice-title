@@ -98,7 +98,7 @@ type DingEmployee = {
   permissionEnabled?: boolean;
 };
 
-type EmployeeRule = DingEmployee & { effect: "ALLOW" | "DENY" };
+type EmployeeRule = DingEmployee & { employeeId?: number; effect: "ALLOW" | "DENY" };
 
 type OperationLog = {
   id: number;
@@ -107,10 +107,29 @@ type OperationLog = {
   businessName: string;
   operator: string;
   result: "SUCCESS" | "FAILED";
-  ip: string;
   createdAt: string;
   detail: string;
 };
+
+const operationTypeLabels: Record<string, string> = {
+  CREATE: "新增",
+  UPDATE: "编辑",
+  PUBLISH: "发布抬头",
+  DISABLE: "停用",
+  RESTORE: "恢复版本",
+  IMPORT: "导入抬头",
+  AUTHORIZE: "新增授权",
+  REVOKE: "取消授权",
+  CREATE_ACCOUNT: "新增账号",
+  CHANGE_PASSWORD: "修改密码",
+  RESET_PASSWORD: "重置密码",
+  ENABLE_ACCOUNT: "启用账号",
+  DISABLE_ACCOUNT: "停用账号",
+};
+
+function formatOperationType(operationType: string) {
+  return operationTypeLabels[operationType] ?? operationType;
+}
 
 type ImportHistory = {
   id: number;
@@ -245,10 +264,10 @@ const permissionProfiles = ref<SubjectPermissionProfile[]>([
 ]);
 
 const operationLogs = ref<OperationLog[]>([
-  { id: 1, module: "发票抬头", action: "发布抬头", businessName: "杭州赛宝卓越技术有限公司", operator: "王财务", result: "SUCCESS", ip: "10.20.3.18", createdAt: "2026-08-07 15:46:12", detail: "发布 V3，并更新杭州主体、华东主体展示数据。" },
-  { id: 2, module: "主体权限", action: "新增授权", businessName: "杭州主体 / 示例员工", operator: "王财务", result: "SUCCESS", ip: "10.20.3.18", createdAt: "2026-08-07 15:40:03", detail: "授予钉钉用户 ding-employee-001 杭州主体查看权限。" },
-  { id: 3, module: "批量导入", action: "导入抬头", businessName: "invoice-title-20260805.xlsx", operator: "李会计", result: "FAILED", ip: "10.20.3.25", createdAt: "2026-08-05 09:28:42", detail: "成功 12 条，失败 1 条；失败原因为纳税人识别号重复。" },
-  { id: 4, module: "发票抬头", action: "恢复版本", businessName: "杭州赛宝卓越技术有限公司", operator: "王财务", result: "SUCCESS", ip: "10.20.3.18", createdAt: "2026-07-22 11:31:08", detail: "将 V2 恢复为新草稿 V4，未覆盖当前发布版本。" },
+  { id: 1, module: "发票抬头", action: "PUBLISH", businessName: "杭州赛宝卓越技术有限公司", operator: "王财务", result: "SUCCESS", createdAt: "2026-08-07 15:46:12", detail: "发布 V3，并更新杭州主体、华东主体展示数据。" },
+  { id: 2, module: "主体权限", action: "AUTHORIZE", businessName: "杭州主体 / 示例员工", operator: "王财务", result: "SUCCESS", createdAt: "2026-08-07 15:40:03", detail: "授予钉钉用户 ding-employee-001 杭州主体查看权限。" },
+  { id: 3, module: "批量导入", action: "IMPORT", businessName: "invoice-title-20260805.xlsx", operator: "李会计", result: "FAILED", createdAt: "2026-08-05 09:28:42", detail: "成功 12 条，失败 1 条；失败原因为纳税人识别号重复。" },
+  { id: 4, module: "发票抬头", action: "RESTORE", businessName: "杭州赛宝卓越技术有限公司", operator: "王财务", result: "SUCCESS", createdAt: "2026-07-22 11:31:08", detail: "将 V2 恢复为新草稿 V4，未覆盖当前发布版本。" },
 ]);
 
 const importHistory = ref<ImportHistory[]>([
@@ -506,21 +525,16 @@ async function loadOperationLogs() {
   const moduleLabels: Record<string, string> = {
     TITLE: "发票抬头", SUBJECT: "主体管理", PERMISSION: "主体权限", IMPORT: "批量导入", QR: "二维码", ACCOUNT: "财务账号",
   };
-  const actionLabels: Record<string, string> = {
-    CREATE: "新增", UPDATE: "编辑", PUBLISH: "发布抬头", DISABLE: "停用", RESTORE: "恢复版本",
-    IMPORT: "导入抬头", CREATE_ACCOUNT: "新增账号", RESET_PASSWORD: "重置密码",
-  };
   try {
     const response = await fetch(`/api/admin/operation-logs?${query}`, { credentials: "include" });
     const result = await readApi<{ records: any[]; total: number }>(response, "操作日志加载失败");
     operationLogs.value = result.records.map((record) => ({
       id: record.id,
       module: moduleLabels[record.moduleType] ?? record.moduleType,
-      action: actionLabels[record.operationType] ?? record.operationType,
+      action: record.operationType,
       businessName: record.businessName,
       operator: record.operatorName,
       result: record.result,
-      ip: record.clientIp,
       createdAt: String(record.createdAt ?? "").replace("T", " ").slice(0, 19),
       detail: record.detailJson,
     }));
@@ -565,6 +579,18 @@ async function logout() {
   }
 }
 
+async function handleFinanceAccountResponse(response: Response) {
+  if (response.status === 401) {
+    financeAccounts.value = [];
+    accountTotal.value = 0;
+    currentUser.value = null;
+    activeMenu.value = "titles";
+    ElMessage.warning("登录状态已失效，请重新登录");
+    return null;
+  }
+  return await readApi<{ records: FinanceAccount[]; total: number }>(response, "财务账号加载失败");
+}
+
 async function loadFinanceAccounts() {
   if (testMode) return;
   accountLoading.value = true;
@@ -576,8 +602,8 @@ async function loadFinanceAccounts() {
   if (accountStatus.value) query.set("status", accountStatus.value);
   try {
     const response = await fetch(`/api/admin/finance-users?${query}`, { credentials: "include" });
-    if (!response.ok) throw new Error("财务账号加载失败");
-    const result = await response.json() as { records: FinanceAccount[]; total: number };
+    const result = await handleFinanceAccountResponse(response);
+    if (!result) return;
     financeAccounts.value = result.records;
     accountTotal.value = result.total;
   } catch (error) {
@@ -976,9 +1002,13 @@ function inheritedEmployeeEnabled(employee: DingEmployee) {
     || profile.departments.some((department) => department.id === employee.departmentId)));
 }
 
+function employeeRuleId(rule: EmployeeRule) {
+  return rule.id ?? rule.employeeId;
+}
+
 /** 个人规则优先；没有个人规则时直接呈现全员或部门授权的最终状态。 */
 function resolveEmployeeEnabled(employee: DingEmployee) {
-  const explicitRule = activePermissionProfile.value?.employeeRules.find((rule) => rule.id === employee.id);
+  const explicitRule = activePermissionProfile.value?.employeeRules.find((rule) => employeeRuleId(rule) === employee.id);
   return explicitRule ? explicitRule.effect === "ALLOW" : inheritedEmployeeEnabled(employee);
 }
 
@@ -992,9 +1022,9 @@ function updateAllEmployeesVisibility(enabled: boolean) {
       + profile.employeeRules.filter((rule) => rule.effect === "ALLOW").length;
 }
 
-async function savePermissionConfiguration() {
+async function savePermissionConfiguration(): Promise<boolean> {
   const profile = activePermissionProfile.value;
-  if (!profile) return;
+  if (!profile) return false;
   permissionSaving.value = true;
   try {
     const response = await fetch(`/api/admin/subjects/${profile.id}/permission-profile`, {
@@ -1004,20 +1034,22 @@ async function savePermissionConfiguration() {
       body: JSON.stringify({
         allEmployeeVisible: profile.allEmployeesVisible,
         departmentIds: profile.departments.map((department) => department.id),
-        employeeRules: profile.employeeRules.map((rule) => ({ employeeId: rule.id, effect: rule.effect })),
+        employeeRules: profile.employeeRules.map((rule) => ({ employeeId: employeeRuleId(rule), effect: rule.effect })),
       }),
     });
     if (!response.ok) await readApi(response, "权限保存失败");
     if (!testMode) await loadPermissionProfile(profile.id);
     ElMessage.success(`${profile.subjectName}权限已保存并立即生效`);
+    return true;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "权限保存失败");
+    return false;
   } finally {
     permissionSaving.value = false;
   }
 }
 
-function applyPermissionSelection() {
+async function applyPermissionSelection() {
   const profile = activePermissionProfile.value;
   if (!profile) return;
   if (permissionForm.targetType === "DEPARTMENT") {
@@ -1028,7 +1060,7 @@ function applyPermissionSelection() {
     });
     profile.departments = [...selected.values()];
   } else {
-    const rules = new Map(profile.employeeRules.map((rule) => [rule.id, rule]));
+    const rules = new Map(profile.employeeRules.map((rule) => [employeeRuleId(rule), rule]));
     directoryEmployees.value.forEach((employee) => {
       const enabled = employeeEnabledDraft[employee.id];
       const inheritedEnabled = inheritedEmployeeEnabled(employee);
@@ -1038,7 +1070,7 @@ function applyPermissionSelection() {
     profile.employeeRules = [...rules.values()];
     profile.employeeCount = profile.employeeRules.length;
   }
-  permissionDialogVisible.value = false;
+  if (await savePermissionConfiguration()) permissionDialogVisible.value = false;
 }
 
 function openLogDetail(log: OperationLog) {
@@ -1299,12 +1331,12 @@ function openLogDetail(log: OperationLog) {
           <header class="card-header"><div><h2>操作日志</h2><p>关键维护动作留痕，不允许人工删除</p></div><span>共 {{ logTotal }} 条</span></header>
           <div class="table-scroll">
             <table>
-              <thead><tr><th>操作时间</th><th>业务模块</th><th>操作类型</th><th>业务对象</th><th>操作人</th><th>结果</th><th>客户端 IP</th><th>操作</th></tr></thead>
+              <thead><tr><th>操作时间</th><th>业务模块</th><th>操作类型</th><th>业务对象</th><th>操作人</th><th>结果</th><th>操作</th></tr></thead>
               <tbody>
                 <tr v-for="log in filteredLogs" :key="log.id">
-                  <td>{{ log.createdAt }}</td><td>{{ log.module }}</td><td><strong>{{ log.action }}</strong></td><td>{{ log.businessName }}</td><td>{{ log.operator }}</td>
+                  <td>{{ log.createdAt }}</td><td>{{ log.module }}</td><td><strong>{{ formatOperationType(log.action) }}</strong></td><td>{{ log.businessName }}</td><td>{{ log.operator }}</td>
                   <td><span class="status" :class="log.result === 'SUCCESS' ? 'status-published' : 'status-draft'"><i />{{ log.result === 'SUCCESS' ? '成功' : '失败' }}</span></td>
-                  <td class="tax-id">{{ log.ip }}</td><td><el-button link type="primary" @click="openLogDetail(log)">查看详情</el-button></td>
+                  <td><el-button link type="primary" @click="openLogDetail(log)">查看详情</el-button></td>
                 </tr>
               </tbody>
             </table>
@@ -1444,7 +1476,7 @@ function openLogDetail(log: OperationLog) {
 
     <el-drawer v-model="logDetailVisible" title="操作日志详情" size="500px">
       <section v-if="currentLog" class="log-detail">
-        <dl><dt>操作时间</dt><dd>{{ currentLog.createdAt }}</dd><dt>业务模块</dt><dd>{{ currentLog.module }}</dd><dt>操作类型</dt><dd>{{ currentLog.action }}</dd><dt>业务对象</dt><dd>{{ currentLog.businessName }}</dd><dt>操作人</dt><dd>{{ currentLog.operator }}</dd><dt>客户端 IP</dt><dd>{{ currentLog.ip }}</dd><dt>执行结果</dt><dd>{{ currentLog.result === 'SUCCESS' ? '成功' : '失败' }}</dd></dl>
+        <dl><dt>操作时间</dt><dd>{{ currentLog.createdAt }}</dd><dt>业务模块</dt><dd>{{ currentLog.module }}</dd><dt>操作类型</dt><dd>{{ formatOperationType(currentLog.action) }}</dd><dt>业务对象</dt><dd>{{ currentLog.businessName }}</dd><dt>操作人</dt><dd>{{ currentLog.operator }}</dd><dt>执行结果</dt><dd>{{ currentLog.result === 'SUCCESS' ? '成功' : '失败' }}</dd></dl>
         <h3>操作说明</h3><p>{{ currentLog.detail }}</p>
       </section>
     </el-drawer>

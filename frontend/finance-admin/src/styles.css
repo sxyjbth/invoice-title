@@ -57,12 +57,12 @@ nav button.active { border-left-color: var(--blue); color: #fff; background: #17
 .card-header p { margin: 0; color: #909bae; font-size: 12px; }
 .card-header > span { color: #778398; font-size: 13px; }
 .table-scroll { overflow-x: auto; }
-table { width: 100%; min-width: 1030px; border-collapse: collapse; }
-th { height: 44px; padding: 0 16px; color: #6e7a8d; background: #f7f9fc; font-size: 12px; font-weight: 650; text-align: left; }
-td { height: 78px; padding: 13px 16px; border-bottom: 1px solid var(--line); color: #38465c; font-size: 13px; vertical-align: middle; }
-td strong, td small { display: block; }
-td strong { margin-bottom: 6px; color: #101b35; font-size: 14px; }
-td small { margin-top: 5px; color: #8b96a9; font-size: 11px; }
+.table-scroll table { width: 100%; min-width: 1030px; border-collapse: collapse; }
+.table-scroll th { height: 44px; padding: 0 16px; color: #6e7a8d; background: #f7f9fc; font-size: 12px; font-weight: 650; text-align: left; }
+.table-scroll td { height: 78px; padding: 13px 16px; border-bottom: 1px solid var(--line); color: #38465c; font-size: 13px; vertical-align: middle; }
+.table-scroll td strong, .table-scroll td small { display: block; }
+.table-scroll td strong { margin-bottom: 6px; color: #101b35; font-size: 14px; }
+.table-scroll td small { margin-top: 5px; color: #8b96a9; font-size: 11px; }
 .tax-id { color: #2c3a51; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .subject-tag { display: inline-block; margin: 2px 5px 2px 0; padding: 4px 8px; border-radius: 6px; color: #2776d9; background: #edf5ff; font-size: 12px; }
 .status { display: inline-flex; align-items: center; gap: 7px; }
@@ -125,6 +125,7 @@ td small { margin-top: 5px; color: #8b96a9; font-size: 11px; }
 .directory-picker > header strong { display: block; margin-bottom: 5px; font-size: 16px; }
 .directory-picker > header p { margin: 0; color: #7d899c; font-size: 12px; }
 .directory-status-filter { display: flex; align-items: center; gap: 12px; min-height: 42px; margin-bottom: 10px; color: #667085; font-size: 13px; }
+.directory-picker .el-table { width: 100%; }
 .directory-picker > .el-pagination { justify-content: flex-end; margin-top: 16px; }
 .directory-picker .el-radio-group { flex-wrap: nowrap; }
 .version-panel h3 { margin-bottom: 6px; }.version-panel > p { color: #7b8799; }
