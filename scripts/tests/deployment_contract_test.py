@@ -22,6 +22,19 @@ class DeploymentContractTest(unittest.TestCase):
         self.assertNotIn("listen ", config)
         self.assertNotIn("18080", config)
 
+    def test_entry_pages_are_html_and_publish_an_isolated_invoice_favicon(self):
+        config = (PROJECT_ROOT / "deploy/nginx/invoice-title.conf").read_text(encoding="utf-8")
+        employee_html = (PROJECT_ROOT / "frontend/employee-h5/index.html").read_text(encoding="utf-8")
+        finance_html = (PROJECT_ROOT / "frontend/finance-admin/index.html").read_text(encoding="utf-8")
+
+        self.assertEqual(2, config.count("default_type text/html;"))
+        self.assertIn("location = /invoice/employee/favicon.svg", config)
+        self.assertIn("location = /invoice/finance/favicon.svg", config)
+        self.assertIn('rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg"', employee_html)
+        self.assertIn('rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg"', finance_html)
+        self.assertTrue((PROJECT_ROOT / "frontend/employee-h5/public/favicon.svg").is_file())
+        self.assertTrue((PROJECT_ROOT / "frontend/finance-admin/public/favicon.svg").is_file())
+
     def test_backend_service_uses_java21_local_bind_and_isolated_user(self):
         service = (PROJECT_ROOT / "deploy/systemd/invoice-title.service").read_text(encoding="utf-8")
 
