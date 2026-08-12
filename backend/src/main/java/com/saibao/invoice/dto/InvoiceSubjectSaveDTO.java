@@ -8,8 +8,7 @@ import lombok.Data;
 @Data
 @Schema(description = "主体保存请求")
 public class InvoiceSubjectSaveDTO {
-    @Schema(description = "主体编码，业务内唯一", example = "HZ", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank(message = "主体编码不能为空")
+    @Schema(description = "兼容旧客户端的主体编码；新建时未传则由系统自动生成", example = "HZ")
     private String subjectCode;
 
     @Schema(description = "主体名称", example = "杭州主体", requiredMode = Schema.RequiredMode.REQUIRED)

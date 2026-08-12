@@ -93,19 +93,23 @@ class FinanceAdministrationCrudWebTest {
     @Test
     void subjectEndpointsCreateEditAndToggleStatus() throws Exception {
         HttpResponse<String> created = send(administrator, "POST", "/api/admin/subjects", """
-                {"subjectCode":"ONLINE","subjectName":"上线测试主体","status":"ENABLED","sortNo":99,"operatorUserId":"admin"}
+                {"subjectName":"上线测试主体","status":"ENABLED","sortNo":99,"operatorUserId":"admin"}
                 """);
         assertThat(created.statusCode()).isEqualTo(200);
         long subjectId = Long.parseLong(created.body());
+        String generatedCode = jdbcTemplate.queryForObject(
+                "SELECT subject_code FROM invoice_subject WHERE id = ?", String.class, subjectId);
+        assertThat(generatedCode).startsWith("SUB-");
 
         HttpResponse<String> updated = send(administrator, "PUT", "/api/admin/subjects/" + subjectId, """
-                {"subjectCode":"ONLINE","subjectName":"上线编辑主体","status":"ENABLED","sortNo":88,"operatorUserId":"admin"}
+                {"subjectName":"上线编辑主体","status":"ENABLED","sortNo":88,"operatorUserId":"admin"}
                 """);
         assertThat(updated.statusCode()).isEqualTo(200);
         assertThat(send(administrator, "PATCH",
                 "/api/admin/subjects/" + subjectId + "/status?status=DISABLED&operatorUserId=admin", null).statusCode())
                 .isEqualTo(200);
-        assertThat(jdbcTemplate.queryForMap("SELECT subject_name, status FROM invoice_subject WHERE id = ?", subjectId))
+        assertThat(jdbcTemplate.queryForMap("SELECT subject_code, subject_name, status FROM invoice_subject WHERE id = ?", subjectId))
+                .containsEntry("SUBJECT_CODE", generatedCode)
                 .containsEntry("SUBJECT_NAME", "上线编辑主体")
                 .containsEntry("STATUS", "DISABLED");
     }

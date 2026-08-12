@@ -13,6 +13,7 @@ public interface InvoiceSubjectMapper {
     InvoiceSubject selectById(@Param("id") Long id);
     List<InvoiceSubject> selectByIds(@Param("ids") List<Long> ids);
     InvoiceSubject selectByCode(@Param("subjectCode") String subjectCode);
+    InvoiceSubject selectByName(@Param("subjectName") String subjectName);
     int insert(InvoiceSubject subject);
     int update(InvoiceSubject subject);
     int updateStatus(@Param("id") Long id, @Param("status") String status, @Param("updatedBy") String updatedBy);

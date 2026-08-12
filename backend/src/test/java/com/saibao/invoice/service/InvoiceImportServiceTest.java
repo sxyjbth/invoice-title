@@ -44,13 +44,13 @@ class InvoiceImportServiceTest {
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             var sheet = workbook.createSheet("发票抬头");
             var header = sheet.createRow(0);
-            String[] headers = {"公司名称", "纳税人识别号", "注册地址", "电话", "开户行", "银行账号", "展示主体编码"};
+            String[] headers = {"公司名称", "纳税人识别号", "注册地址", "电话", "开户行", "银行账号", "展示主体"};
             for (int index = 0; index < headers.length; index++) {
                 header.createCell(index).setCellValue(headers[index]);
             }
 
             var valid = sheet.createRow(1);
-            String[] values = {"上海测试技术有限公司", "91310000IMPORT00001", "上海市浦东新区测试路1号", "021-88888888", "宁波银行上海支行", "86040000000000001", "HZ"};
+            String[] values = {"上海测试技术有限公司", "91310000IMPORT00001", "上海市浦东新区测试路1号", "021-88888888", "宁波银行上海支行", "86040000000000001", "杭州主体"};
             for (int index = 0; index < values.length; index++) {
                 valid.createCell(index).setCellValue(values[index]);
             }

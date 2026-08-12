@@ -114,8 +114,32 @@ describe("财务端发票抬头管理", () => {
     await wrapper.findAll("nav button").find((item) => item.text().includes("主体管理"))!.trigger("click");
 
     expect(wrapper.get("tbody").text()).toContain("杭州主体");
-    expect(wrapper.get("tbody").text()).toContain("HZ");
+    expect(wrapper.get("main").text()).not.toContain("主体编码");
+    expect(wrapper.find('input[placeholder="搜索主体名称"]').exists()).toBe(true);
     expect(wrapper.find('[aria-label="主体管理列表分页"]').exists()).toBe(true);
+  });
+
+  it("新增主体只填写名称且请求不再包含主体编码", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 200 }));
+    const wrapper = mount(AdminApp, { global, attachTo: document.body });
+    await wrapper.findAll("nav button").find((item) => item.text().includes("主体管理"))!.trigger("click");
+    await wrapper.findAll("button").find((item) => item.text().includes("新增主体"))!.trigger("click");
+    await nextTick();
+
+    expect(document.body.textContent).not.toContain("主体编码");
+    const nameInput = document.body.querySelector<HTMLInputElement>('input[placeholder="例如：杭州主体"]')!;
+    nameInput.value = "赛宝主体";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    await nextTick();
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("保存主体"))!.click();
+    await flushPromises();
+
+    expect(request).toHaveBeenCalledWith("/api/admin/subjects", expect.objectContaining({
+      method: "POST",
+      body: expect.not.stringContaining("subjectCode"),
+    }));
+    wrapper.unmount();
   });
 
   it("主体列表可按启用或停用状态筛选", async () => {

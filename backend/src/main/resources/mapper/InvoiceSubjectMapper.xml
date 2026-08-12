@@ -5,8 +5,7 @@
         WHERE s.deleted = 0
         <if test="status != null and status != ''">AND s.status = #{status}</if>
         <if test="keyword != null and keyword != ''">
-            AND (LOWER(s.subject_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
-                OR LOWER(s.subject_code) LIKE CONCAT('%', LOWER(#{keyword}), '%'))
+            AND LOWER(s.subject_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
         </if>
     </sql>
 
@@ -28,6 +27,14 @@
         SELECT id, subject_code, subject_name, status, sort_no, created_by, created_at, updated_by, updated_at
         FROM invoice_subject
         WHERE subject_code = #{subjectCode} AND deleted = 0
+    </select>
+
+    <select id="selectByName" resultType="com.saibao.invoice.domain.InvoiceSubject">
+        SELECT id, subject_code, subject_name, status, sort_no, created_by, created_at, updated_by, updated_at
+        FROM invoice_subject
+        WHERE subject_name = #{subjectName} AND deleted = 0
+        ORDER BY id ASC
+        LIMIT 1
     </select>
 
     <select id="selectById" resultType="com.saibao.invoice.domain.InvoiceSubject">

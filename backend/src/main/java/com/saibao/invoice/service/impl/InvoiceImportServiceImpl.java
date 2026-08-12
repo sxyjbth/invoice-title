@@ -57,8 +57,10 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
 
     private static final int MAX_ROWS = 1000;
     private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
+    private static final String SUBJECT_HEADER = "展示主体";
+    private static final String LEGACY_SUBJECT_HEADER = "展示主体编码";
     private static final List<String> HEADERS = List.of(
-            "公司名称", "纳税人识别号", "注册地址", "电话", "开户行", "银行账号", "展示主体编码"
+            "公司名称", "纳税人识别号", "注册地址", "电话", "开户行", "银行账号", SUBJECT_HEADER
     );
 
     private final InvoiceImportTaskMapper importTaskMapper;
@@ -173,7 +175,7 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
             Row example = sheet.createRow(1);
             String[] values = {"杭州赛宝卓越技术有限公司", "91110400MADFF1HE1T",
                     "浙江省杭州市钱塘区临江街道纬五路3688号临江科创园6号楼12楼", "4008696096",
-                    "宁波银行股份有限公司北京丰台支行", "86041110000957180", "HZ"};
+                    "宁波银行股份有限公司北京丰台支行", "86041110000957180", "杭州主体"};
             for (int index = 0; index < values.length; index++) {
                 example.createCell(index).setCellValue(values[index]);
             }
@@ -230,6 +232,9 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
         for (Cell cell : headerRow) {
             columns.put(formatter.formatCellValue(cell).trim(), cell.getColumnIndex());
         }
+        if (!columns.containsKey(SUBJECT_HEADER) && columns.containsKey(LEGACY_SUBJECT_HEADER)) {
+            columns.put(SUBJECT_HEADER, columns.get(LEGACY_SUBJECT_HEADER));
+        }
         List<String> missing = HEADERS.stream().filter(header -> !columns.containsKey(header)).toList();
         if (!missing.isEmpty()) {
             throw new IllegalArgumentException("Excel 缺少表头：" + String.join("、", missing));
@@ -270,21 +275,23 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
         if (taxpayerIdsInFile.contains(taxpayerId) || invoiceTitleMapper.selectByTaxpayerId(taxpayerId) != null) {
             return RowValidation.error("DUPLICATE_TAXPAYER_ID", "纳税人识别号已存在或在当前文件中重复");
         }
-        String subjectCodes = values.get("展示主体编码");
-        if (subjectCodes.isBlank()) {
-            return RowValidation.error("REQUIRED_MISSING", "展示主体编码不能为空");
+        String subjectNames = values.get(SUBJECT_HEADER);
+        if (subjectNames.isBlank()) {
+            return RowValidation.error("REQUIRED_MISSING", "展示主体不能为空");
         }
         List<InvoiceSubject> subjects = new ArrayList<>();
-        for (String code : subjectCodes.split("[,，;；]")) {
-            String normalized = code.trim();
+        for (String name : subjectNames.split("[,，;；]")) {
+            String normalized = name.trim();
             if (normalized.isEmpty()) {
                 continue;
             }
-            InvoiceSubject subject = subjectMapper.selectByCode(normalized);
+            InvoiceSubject subject = subjectMapper.selectByName(normalized);
+            if (subject == null) subject = subjectMapper.selectByCode(normalized);
             if (subject == null || !"ENABLED".equals(subject.getStatus())) {
-                return RowValidation.error("SUBJECT_NOT_FOUND", "展示主体编码不存在或已停用：" + normalized);
+                return RowValidation.error("SUBJECT_NOT_FOUND", "展示主体不存在或已停用：" + normalized);
             }
-            if (subjects.stream().noneMatch(existing -> existing.getId().equals(subject.getId()))) {
+            Long subjectId = subject.getId();
+            if (subjects.stream().noneMatch(existing -> existing.getId().equals(subjectId))) {
                 subjects.add(subject);
             }
         }

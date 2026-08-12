@@ -379,7 +379,7 @@ const titleForm = reactive({
   status: "DRAFT" as "DRAFT" | "PUBLISHED",
 });
 
-const subjectForm = reactive({ code: "", name: "", status: "ENABLED" as "ENABLED" | "DISABLED", sortNo: 0 });
+const subjectForm = reactive({ name: "", status: "ENABLED" as "ENABLED" | "DISABLED", sortNo: 0 });
 const permissionForm = reactive({
   subjectName: "杭州主体",
   targetType: "USER" as "USER" | "DEPARTMENT",
@@ -406,7 +406,7 @@ const currentTotal = computed(() => testMode
   : titleTotal.value);
 const filteredSubjects = computed(() => subjects.value.filter((subject) => {
   const value = subjectKeyword.value.trim().toLowerCase();
-  const keywordMatches = !value || subject.name.toLowerCase().includes(value) || subject.code.toLowerCase().includes(value);
+  const keywordMatches = !value || subject.name.toLowerCase().includes(value);
   const statusMatches = subjectStatus.value === "ALL" || subject.status === subjectStatus.value;
   return keywordMatches && statusMatches;
 }));
@@ -825,14 +825,13 @@ async function saveTitle(status: "DRAFT" | "PUBLISHED") {
 
 function openSubjectDialog() {
   editingSubjectId.value = null;
-  Object.assign(subjectForm, { code: "", name: "", status: "ENABLED", sortNo: 0 });
+  Object.assign(subjectForm, { name: "", status: "ENABLED", sortNo: 0 });
   subjectDialogVisible.value = true;
 }
 
 function openSubjectEditor(subject: InvoiceSubject) {
   editingSubjectId.value = subject.id;
   Object.assign(subjectForm, {
-    code: subject.code,
     name: subject.name,
     status: subject.status,
     sortNo: subject.sortNo,
@@ -841,8 +840,8 @@ function openSubjectEditor(subject: InvoiceSubject) {
 }
 
 async function saveSubject() {
-  if (!subjectForm.code.trim() || !subjectForm.name.trim()) {
-    ElMessage.warning("请填写主体名称和主体编码");
+  if (!subjectForm.name.trim()) {
+    ElMessage.warning("请填写主体名称");
     return;
   }
   subjectSaving.value = true;
@@ -853,7 +852,6 @@ async function saveSubject() {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        subjectCode: subjectForm.code.trim().toUpperCase(),
         subjectName: subjectForm.name.trim(),
         status: subjectForm.status,
         sortNo: subjectForm.sortNo,
@@ -863,7 +861,7 @@ async function saveSubject() {
     if (!response.ok) await readApi(response, "主体保存失败");
     if (testMode) {
       const existing = subjects.value.find((item) => item.id === editingSubjectId.value);
-      if (existing) Object.assign(existing, { code: subjectForm.code.toUpperCase(), name: subjectForm.name, status: subjectForm.status, sortNo: subjectForm.sortNo });
+      if (existing) Object.assign(existing, { name: subjectForm.name, status: subjectForm.status, sortNo: subjectForm.sortNo });
     } else {
       await loadSubjects();
     }
@@ -1193,7 +1191,7 @@ function openLogDetail(log: OperationLog) {
 
       <main v-else-if="activeMenu === 'subjects'" class="content">
         <section class="management-toolbar">
-          <el-input v-model="subjectKeyword" clearable placeholder="搜索主体名称或编码" :prefix-icon="Search" @keyup.enter="subjectPageNum = 1; loadSubjects()" />
+          <el-input v-model="subjectKeyword" clearable placeholder="搜索主体名称" :prefix-icon="Search" @keyup.enter="subjectPageNum = 1; loadSubjects()" />
           <section class="status-tabs management-status-tabs" aria-label="主体状态筛选">
             <button type="button" data-status="ALL" :class="{ active: subjectStatus === 'ALL' }" @click="subjectStatus = 'ALL'; subjectPageNum = 1; loadSubjects()">全部</button>
             <button type="button" data-status="ENABLED" :class="{ active: subjectStatus === 'ENABLED' }" @click="subjectStatus = 'ENABLED'; subjectPageNum = 1; loadSubjects()">启用</button>
@@ -1205,16 +1203,16 @@ function openLogDetail(log: OperationLog) {
           <header class="card-header"><div><h2>主体列表</h2><p>停用主体后，关联抬头及二维码将立即停止展示</p></div><span>共 {{ currentSubjectTotal }} 条</span></header>
           <div class="table-scroll">
             <table>
-              <thead><tr><th>主体名称</th><th>主体编码</th><th>关联抬头</th><th>覆盖员工</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+              <thead><tr><th>主体名称</th><th>关联抬头</th><th>覆盖员工</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
               <tbody>
                 <tr v-for="subject in filteredSubjects" :key="subject.id">
-                  <td><strong>{{ subject.name }}</strong></td><td class="tax-id">{{ subject.code }}</td>
+                  <td><strong>{{ subject.name }}</strong></td>
                   <td>{{ subject.titleCount }} 个</td><td>{{ subject.employeeCount }} 人</td>
                   <td><span class="status" :class="subject.status === 'ENABLED' ? 'status-published' : 'status-disabled'"><i />{{ subject.status === 'ENABLED' ? '启用' : '停用' }}</span></td>
                   <td>{{ subject.updatedAt }}<small>{{ subject.updatedBy }}</small></td>
                   <td class="row-actions"><el-button link type="primary" @click="openSubjectEditor(subject)">编辑</el-button><el-button link type="primary" @click="changeSubjectStatus(subject)">{{ subject.status === 'ENABLED' ? '停用' : '启用' }}</el-button></td>
                 </tr>
-                <tr v-if="filteredSubjects.length === 0"><td class="empty-row" colspan="7">未找到符合条件的主体</td></tr>
+                <tr v-if="filteredSubjects.length === 0"><td class="empty-row" colspan="6">未找到符合条件的主体</td></tr>
               </tbody>
             </table>
           </div>
@@ -1428,7 +1426,6 @@ function openLogDetail(log: OperationLog) {
     <el-dialog v-model="subjectDialogVisible" :title="editingSubjectId ? '编辑主体' : '新增主体'" width="520px">
       <el-form label-position="top">
         <el-form-item label="主体名称" required><el-input v-model="subjectForm.name" placeholder="例如：杭州主体" /></el-form-item>
-        <el-form-item label="主体编码" required><el-input v-model="subjectForm.code" placeholder="例如：HZ，保存后不可重复" /></el-form-item>
         <el-form-item label="状态"><el-radio-group v-model="subjectForm.status"><el-radio value="ENABLED">启用</el-radio><el-radio value="DISABLED">停用</el-radio></el-radio-group></el-form-item>
         <el-form-item label="展示顺序"><el-input-number v-model="subjectForm.sortNo" :min="0" :max="9999" /></el-form-item>
       </el-form>

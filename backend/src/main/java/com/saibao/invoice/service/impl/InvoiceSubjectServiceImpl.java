@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
 
 /** 主体管理服务实现。 */
 @Service
@@ -29,10 +31,12 @@ public class InvoiceSubjectServiceImpl implements IInvoiceSubjectService {
 
     @Override
     public Long create(InvoiceSubjectSaveDTO request) {
-        InvoiceSubject duplicate = mapper.selectByCode(request.getSubjectCode().trim().toUpperCase());
-        if (duplicate != null) throw new IllegalArgumentException("主体编码已存在：" + request.getSubjectCode());
+        String subjectCode = normalizeCode(request.getSubjectCode());
+        if (subjectCode == null) subjectCode = generateSubjectCode();
+        InvoiceSubject duplicate = mapper.selectByCode(subjectCode);
+        if (duplicate != null) throw new IllegalArgumentException("主体编码已存在：" + subjectCode);
         InvoiceSubject subject = new InvoiceSubject();
-        subject.setSubjectCode(request.getSubjectCode().trim().toUpperCase());
+        subject.setSubjectCode(subjectCode);
         subject.setSubjectName(request.getSubjectName().trim());
         subject.setStatus(request.getStatus());
         subject.setSortNo(request.getSortNo());
@@ -48,11 +52,14 @@ public class InvoiceSubjectServiceImpl implements IInvoiceSubjectService {
     public void update(Long id, InvoiceSubjectSaveDTO request) {
         InvoiceSubject current = mapper.selectById(id);
         if (current == null) throw new IllegalArgumentException("主体不存在：" + id);
-        InvoiceSubject duplicate = mapper.selectByCode(request.getSubjectCode().trim().toUpperCase());
-        if (duplicate != null && !duplicate.getId().equals(id)) {
-            throw new IllegalArgumentException("主体编码已存在：" + request.getSubjectCode());
+        String subjectCode = normalizeCode(request.getSubjectCode());
+        if (subjectCode != null) {
+            InvoiceSubject duplicate = mapper.selectByCode(subjectCode);
+            if (duplicate != null && !duplicate.getId().equals(id)) {
+                throw new IllegalArgumentException("主体编码已存在：" + subjectCode);
+            }
+            current.setSubjectCode(subjectCode);
         }
-        current.setSubjectCode(request.getSubjectCode().trim().toUpperCase());
         current.setSubjectName(request.getSubjectName().trim());
         current.setStatus(request.getStatus());
         current.setSortNo(request.getSortNo());
@@ -63,6 +70,19 @@ public class InvoiceSubjectServiceImpl implements IInvoiceSubjectService {
     @Override
     public void changeStatus(Long id, String status, String operatorUserId) {
         if (mapper.updateStatus(id, status, operatorUserId) == 0) throw new IllegalArgumentException("主体不存在：" + id);
+    }
+
+    private String normalizeCode(String subjectCode) {
+        if (subjectCode == null || subjectCode.isBlank()) return null;
+        return subjectCode.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String generateSubjectCode() {
+        String subjectCode;
+        do {
+            subjectCode = "SUB-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(Locale.ROOT);
+        } while (mapper.selectByCode(subjectCode) != null);
+        return subjectCode;
     }
 
     private InvoiceSubjectVO toVO(InvoiceSubject source) {
