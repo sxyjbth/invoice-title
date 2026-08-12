@@ -4,10 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises } from "@vue/test-utils";
 import EmployeeApp from "../src/App.vue";
 import { elementPlusOptions } from "../src/element-plus";
-import requestAuthCodeApi from "dingtalk-jsapi/api/runtime/permission/requestAuthCode";
+import { requestAuthCode$ as requestAuthCodeApi } from "dingtalk-jsapi/api/runtime/permission/requestAuthCode";
+
+const requestAuthCodeApiMock = vi.hoisted(() => vi.fn().mockResolvedValue({ code: "sdk-auth-code" }));
 
 vi.mock("dingtalk-jsapi/api/runtime/permission/requestAuthCode", () => ({
-  default: vi.fn().mockResolvedValue({ code: "sdk-auth-code" }),
+  // 生产依赖是 CommonJS；默认导出经 Vite 互操作后可能表现为模块对象。
+  default: { default: requestAuthCodeApiMock },
+  requestAuthCode$: requestAuthCodeApiMock,
 }));
 
 const global = { plugins: [[ElementPlus, elementPlusOptions]] } as any;

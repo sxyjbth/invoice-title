@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ArrowLeft, CopyDocument, Grid, Refresh, Close } from "@element-plus/icons-vue";
 import QRCode from "qrcode";
-import requestAuthCodeApi from "dingtalk-jsapi/api/runtime/permission/requestAuthCode";
+import { requestAuthCode$ as requestAuthCodeApi } from "dingtalk-jsapi/api/runtime/permission/requestAuthCode";
 import closeNavigationApi from "dingtalk-jsapi/api/biz/navigation/close";
 
 type InvoiceTitle = {
