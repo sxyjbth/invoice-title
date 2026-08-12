@@ -4,14 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises } from "@vue/test-utils";
 import EmployeeApp from "../src/App.vue";
 import { elementPlusOptions } from "../src/element-plus";
-import { requestAuthCode$ as requestAuthCodeApi } from "dingtalk-jsapi/api/runtime/permission/requestAuthCode";
 
-const requestAuthCodeApiMock = vi.hoisted(() => vi.fn().mockResolvedValue({ code: "sdk-auth-code" }));
+const bundledDingTalkApi = vi.hoisted(() => ({
+  getAuthCode: vi.fn().mockResolvedValue({ authCode: "sdk-auth-code" }),
+}));
 
-vi.mock("dingtalk-jsapi/api/runtime/permission/requestAuthCode", () => ({
-  // 生产依赖是 CommonJS；默认导出经 Vite 互操作后可能表现为模块对象。
-  default: { default: requestAuthCodeApiMock },
-  requestAuthCode$: requestAuthCodeApiMock,
+vi.mock("dingtalk-jsapi", () => ({
+  default: bundledDingTalkApi,
 }));
 
 const global = { plugins: [[ElementPlus, elementPlusOptions]] } as any;
@@ -19,6 +18,10 @@ const global = { plugins: [[ElementPlus, elementPlusOptions]] } as any;
 describe("员工端发票抬头", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
+    bundledDingTalkApi.getAuthCode.mockReset().mockResolvedValue({ authCode: "sdk-auth-code" });
+    delete (window as any).DingTalkPC;
+    delete (window as any).DD;
     window.history.replaceState({}, "", "/?corpCode=sebo");
     (window as any).dd = {
       env: { platform: "android" },
@@ -26,7 +29,7 @@ describe("员工端发票抬头", () => {
     };
   });
 
-  function mockEmployeeApis() {
+  function mockEmployeeApis(expectedAuthCode = "ding-auth-code") {
     return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.includes("/api/employee/auth/organizations")) {
@@ -36,7 +39,7 @@ describe("员工端发票抬头", () => {
         ]), { status: 200 });
       }
       if (url.includes("/api/employee/auth/dingtalk")) {
-        expect(init?.body).toBe(JSON.stringify({ corpCode: "sebo", authCode: "ding-auth-code" }));
+        expect(init?.body).toBe(JSON.stringify({ corpCode: "sebo", authCode: expectedAuthCode }));
         return new Response(JSON.stringify({ dingUserId: "ding-employee-001", employeeName: "示例员工" }), { status: 200 });
       }
       if (url.includes("/api/employee/invoice-titles/1/qr-token")) {
@@ -74,15 +77,60 @@ describe("员工端发票抬头", () => {
       .toHaveBeenCalledWith(expect.objectContaining({ corpId: "ding-sebo" }));
   });
 
-  it("钉钉 PC 注入非函数的 requestAuthCode 时回退使用模块化 JSAPI", async () => {
-    (window as any).dd.runtime.permission.requestAuthCode = {};
-    const request = mockEmployeeApis();
+  it("与 sebo-meal 一致在钉钉容器没有全局 API 时使用完整 npm SDK", async () => {
+    delete (window as any).dd;
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 AliApp(DingTalk/8.3.45)");
+    const request = mockEmployeeApis("sdk-auth-code");
 
     mount(EmployeeApp, { global });
     await flushPromises();
 
-    expect(requestAuthCodeApi).toHaveBeenCalledWith(expect.objectContaining({ corpId: "ding-sebo" }));
+    expect(bundledDingTalkApi.getAuthCode).toHaveBeenCalledWith({ corpId: "ding-sebo" });
     expect(request.mock.calls.some(([url]) => String(url).includes("/api/employee/auth/dingtalk"))).toBe(true);
+  });
+
+  it("与 sebo-meal 一致优先使用官方 getAuthCode 免登入口", async () => {
+    const getAuthCode = vi.fn().mockResolvedValue({ authCode: "official-auth-code" });
+    (window as any).dd.getAuthCode = getAuthCode;
+    (window as any).dd.runtime.permission.requestAuthCode = vi.fn().mockRejectedValue(new Error("不应该调用旧入口"));
+    const request = mockEmployeeApis("official-auth-code");
+
+    mount(EmployeeApp, { global });
+    await flushPromises();
+
+    expect(getAuthCode).toHaveBeenCalledWith({ corpId: "ding-sebo" });
+    expect((window as any).dd.runtime.permission.requestAuthCode).not.toHaveBeenCalled();
+    expect(request.mock.calls.some(([url]) => String(url).includes("/api/employee/auth/dingtalk"))).toBe(true);
+  });
+
+  it("钉钉 PC 桥接延迟注入时等待桥接就绪后再请求免登码", async () => {
+    vi.useFakeTimers();
+    delete (window as any).dd;
+    const request = mockEmployeeApis();
+
+    mount(EmployeeApp, { global });
+    await flushPromises();
+    expect(bundledDingTalkApi.getAuthCode).not.toHaveBeenCalled();
+
+    (window as any).DD = {
+      runtime: { permission: { requestAuthCode: vi.fn().mockResolvedValue({ code: "ding-auth-code" }) } },
+    };
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+
+    expect(request.mock.calls.some(([url]) => String(url).includes("/api/employee/auth/dingtalk"))).toBe(true);
+  });
+
+  it("展示钉钉 JSAPI 返回的真实错误信息", async () => {
+    (window as any).dd.runtime.permission.requestAuthCode = vi.fn().mockRejectedValueOnce(
+      new Error("current environment is not supported"),
+    );
+    mockEmployeeApis();
+
+    const wrapper = mount(EmployeeApp, { global });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("current environment is not supported");
   });
 
   it("点击展示二维码后显示十分钟有效的临时二维码", async () => {

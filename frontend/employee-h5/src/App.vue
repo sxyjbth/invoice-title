@@ -2,8 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ArrowLeft, CopyDocument, Grid, Refresh, Close } from "@element-plus/icons-vue";
 import QRCode from "qrcode";
-import { requestAuthCode$ as requestAuthCodeApi } from "dingtalk-jsapi/api/runtime/permission/requestAuthCode";
 import closeNavigationApi from "dingtalk-jsapi/api/biz/navigation/close";
+import { requestDingTalkAuthCode } from "./dingTalkAuth";
 
 type InvoiceTitle = {
   id: number;
@@ -74,31 +74,6 @@ async function resolveDingTalkOrganization(): Promise<DingTalkOrganization> {
   }
   if (organizations.length === 1) return organizations[0];
   throw new Error("工作台入口缺少企业参数 corpCode，请联系管理员检查应用地址");
-}
-
-function requestDingTalkAuthCode(corpId: string): Promise<string> {
-  const queryCode = new URLSearchParams(window.location.search).get("authCode");
-  const dd = (window as any).dd;
-  const injectedRequestAuthCode = dd?.runtime?.permission?.requestAuthCode;
-  const requestAuthCode = typeof injectedRequestAuthCode === "function"
-    ? injectedRequestAuthCode
-    : requestAuthCodeApi;
-  if (typeof requestAuthCode !== "function") {
-    if (queryCode) return Promise.resolve(queryCode);
-    return Promise.reject(new Error("请从钉钉工作台打开“发票抬头”应用"));
-  }
-
-  return new Promise((resolve, reject) => {
-    const options = {
-      corpId,
-      success: (result: { code?: string }) => result?.code ? resolve(result.code) : reject(new Error("钉钉未返回免登码")),
-      fail: (error: { errorMessage?: string }) => reject(new Error(error?.errorMessage || "获取钉钉免登码失败")),
-    };
-    const returned = requestAuthCode(options);
-    if (returned?.then) {
-      returned.then(options.success, options.fail);
-    }
-  });
 }
 
 async function initialize() {
@@ -205,7 +180,7 @@ async function refreshQr() {
 
 function returnWorkbench() {
   const close = (window as any).dd?.biz?.navigation?.close || closeNavigationApi;
-  if (typeof close === "function") close();
+  if (typeof close === "function") close({});
   else window.history.back();
 }
 
