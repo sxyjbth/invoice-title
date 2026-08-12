@@ -6,6 +6,8 @@ set -Eeuo pipefail
 umask 027
 
 APP_HOME="${INVOICE_APP_HOME:-/opt/invoice-title}"
+APP_USER="${INVOICE_APP_USER:-invoice_title}"
+APP_GROUP="${INVOICE_APP_GROUP:-invoice_title}"
 SOURCE_DIR="${INVOICE_SOURCE_DIR:-${APP_HOME}/source}"
 NODE_HOME="${INVOICE_NODE_HOME:-${APP_HOME}/runtime/node}"
 PNPM_HOME="${INVOICE_PNPM_HOME:-${APP_HOME}/runtime/pnpm}"
@@ -75,6 +77,8 @@ printf '%s\n' "${commit_id}" > "${staging_dir}/GIT_COMMIT"
 chmod 0755 "${staging_dir}" "${staging_dir}/frontend"
 find "${staging_dir}/frontend" -type d -exec chmod 0755 {} +
 find "${staging_dir}/frontend" -type f -exec chmod 0644 {} +
+# systemd 以专用账号运行后端；构建用户可能是 root，交付前统一 release 归属。
+chown -R "${APP_USER}:${APP_GROUP}" "${staging_dir}"
 
 # 同一文件系统内原子改名，避免 current 指向复制到一半的目录。
 mv -- "${staging_dir}" "${release_dir}"

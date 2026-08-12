@@ -48,6 +48,15 @@ class RuntimeScriptContractTest {
                 .doesNotContain("password: nacos");
     }
 
+    @Test
+    void productionReleaseIsOwnedByTheSystemdServiceAccount() throws IOException {
+        String buildRelease = readProjectFile("deploy", "server-build-release.sh");
+
+        assertThat(buildRelease)
+                .contains("APP_USER=\"${INVOICE_APP_USER:-invoice_title}\"")
+                .contains("chown -R \"${APP_USER}:${APP_GROUP}\" \"${staging_dir}\"");
+    }
+
     private String readProjectFile(String... parts) throws IOException {
         Path backendRoot = Path.of("").toAbsolutePath();
         Path projectRoot = backendRoot.getParent();
