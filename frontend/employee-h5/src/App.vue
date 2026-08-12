@@ -110,11 +110,42 @@ function notify(message: string) {
 
 async function copyText(value: string, message = "已复制") {
   try {
-    await navigator.clipboard?.writeText(value);
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        // HTTP IP、扫码浏览器和部分钉钉 WebView 虽暴露 Clipboard API，但会拒绝写入。
+        legacyCopyText(value);
+      }
+    } else {
+      legacyCopyText(value);
+    }
+    notify(message);
   } catch {
-    // 钉钉容器未授权剪贴板时仍保留可见反馈。
+    notify("复制失败，请长按内容手动复制");
   }
-  notify(message);
+}
+
+/** HTTP IP 和部分钉钉移动 WebView 不提供 Clipboard API，使用原生选区复制兜底。 */
+function legacyCopyText(value: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  try {
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    if (typeof document.execCommand !== "function" || !document.execCommand("copy")) {
+      throw new Error("当前浏览器不支持自动复制");
+    }
+  } finally {
+    textarea.remove();
+  }
 }
 
 function copyAll() {

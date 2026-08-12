@@ -180,4 +180,59 @@ describe("员工端发票抬头", () => {
     expect(wrapper.find(".subject-selector").exists()).toBe(false);
     expect(wrapper.find('[data-testid="show-qr"]').exists()).toBe(false);
   });
+
+  it("扫码页面在移动端安全剪贴板不可用时使用兼容复制方案", async () => {
+    window.history.replaceState({}, "", "/?qrToken=public-token");
+    vi.spyOn(window.navigator, "clipboard", "get").mockReturnValue(undefined as any);
+    const legacyCopy = vi.fn().mockReturnValue(true);
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: legacyCopy,
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      id: 3,
+      titleId: 1,
+      companyName: "杭州赛宝卓越技术有限公司",
+      taxpayerId: "91110400MADFF1HE1T",
+      registeredAddress: "浙江省杭州市钱塘区临江街道纬五路3688号临江科创园6号楼12楼",
+      phone: "4008696096",
+      bankName: "宁波银行股份有限公司北京丰台支行",
+      bankAccount: "86041110000957180",
+    }), { status: 200 }));
+    const wrapper = mount(EmployeeApp, { global });
+    await flushPromises();
+
+    await wrapper.findAll("button").find((button) => button.text().includes("复制全部"))!.trigger("click");
+    await flushPromises();
+
+    expect(legacyCopy).toHaveBeenCalledWith("copy");
+    expect(wrapper.text()).toContain("已复制，可粘贴给开票方");
+  });
+
+  it("扫码页面在移动端拒绝 Clipboard API 时继续使用兼容复制方案", async () => {
+    window.history.replaceState({}, "", "/?qrToken=public-token");
+    const secureCopy = vi.fn().mockRejectedValue(new Error("NotAllowedError"));
+    vi.spyOn(window.navigator, "clipboard", "get").mockReturnValue({ writeText: secureCopy } as any);
+    const legacyCopy = vi.fn().mockReturnValue(true);
+    Object.defineProperty(document, "execCommand", { configurable: true, value: legacyCopy });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      id: 3,
+      titleId: 1,
+      companyName: "杭州赛宝卓越技术有限公司",
+      taxpayerId: "91110400MADFF1HE1T",
+      registeredAddress: "浙江省杭州市钱塘区临江街道纬五路3688号临江科创园6号楼12楼",
+      phone: "4008696096",
+      bankName: "宁波银行股份有限公司北京丰台支行",
+      bankAccount: "86041110000957180",
+    }), { status: 200 }));
+    const wrapper = mount(EmployeeApp, { global });
+    await flushPromises();
+
+    await wrapper.findAll("button").find((button) => button.text().includes("复制全部"))!.trigger("click");
+    await flushPromises();
+
+    expect(secureCopy).toHaveBeenCalled();
+    expect(legacyCopy).toHaveBeenCalledWith("copy");
+    expect(wrapper.text()).toContain("已复制，可粘贴给开票方");
+  });
 });

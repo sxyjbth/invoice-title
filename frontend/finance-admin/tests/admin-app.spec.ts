@@ -458,4 +458,49 @@ describe("财务端发票抬头管理", () => {
       body: expect.any(FormData),
     }));
   });
+
+  it("批量导入存在失败行时直接提示行号和具体失败原因", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/admin/invoice-imports" && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          id: 9,
+          taskNo: "IMP-FAILED-9",
+          status: "FAILED",
+          totalCount: 1,
+          successCount: 0,
+          failureCount: 1,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/invoice-imports/errors")) {
+        return new Response(JSON.stringify({
+          records: [{
+            id: 91,
+            rowNo: 2,
+            taxpayerId: "91110400MADFF1HE1T",
+            errorCode: "DUPLICATE_TAXPAYER_ID",
+            errorMessage: "纳税人识别号已存在或在当前文件中重复",
+          }],
+          total: 1,
+          pageNum: 1,
+          pageSize: 10,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ records: [], total: 0 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const wrapper = mount(AdminApp, { global, attachTo: document.body });
+    (wrapper.vm as any).importFile = new File(["xlsx"], "titles.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    await (wrapper.vm as any).submitImport();
+    await flushPromises();
+
+    expect(request.mock.calls.some(([url]) => String(url).includes("taskId=9"))).toBe(true);
+    expect(document.body.textContent).toContain("导入失败：第 2 行，纳税人识别号已存在或在当前文件中重复");
+    wrapper.unmount();
+  });
 });

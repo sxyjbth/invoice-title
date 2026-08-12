@@ -49,11 +49,13 @@ class InvoiceImportServiceTest {
     @Test
     void templateAndImportShouldContainOnlyInvoiceTitleFieldsWithoutSubject() throws Exception {
         try (XSSFWorkbook template = new XSSFWorkbook(new ByteArrayInputStream(invoiceImportService.createTemplate()))) {
-            var header = template.getSheetAt(0).getRow(0);
+            var sheet = template.getSheetAt(0);
+            var header = sheet.getRow(0);
             assertThat(header.getLastCellNum()).isEqualTo((short) 6);
             assertThat(IntStream.range(0, header.getLastCellNum())
                     .mapToObj(index -> header.getCell(index).getStringCellValue()).toList())
                     .containsExactly("公司名称", "纳税人识别号", "注册地址", "电话", "开户行", "银行账号");
+            assertThat(sheet.getLastRowNum()).as("导入模板只保留表头，不能携带会被误导入的真实示例数据").isZero();
         }
 
         var task = invoiceImportService.importWorkbook(

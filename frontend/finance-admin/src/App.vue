@@ -109,6 +109,14 @@ type ImportHistory = {
   createdAt: string;
 };
 
+type ImportRowError = {
+  id: number;
+  rowNo: number;
+  taxpayerId?: string;
+  errorCode: string;
+  errorMessage: string;
+};
+
 const allNavigation: Array<{ code: MenuCode; label: string; icon: typeof Document; superAdminOnly?: boolean }> = [
   { code: "titles", label: "抬头管理", icon: Document },
   { code: "subjects", label: "主体管理", icon: OfficeBuilding },
@@ -272,6 +280,9 @@ const importSubmitting = ref(false);
 const importHistoryPageNum = ref(1);
 const importHistoryPageSize = ref(10);
 const importHistoryTotal = ref(2);
+const importErrorTaskId = ref<number | null>(null);
+const importRowErrors = ref<ImportRowError[]>([]);
+const importErrorsLoading = ref(false);
 const subjectPageNum = ref(1);
 const subjectPageSize = ref(20);
 const subjectKeyword = ref("");
@@ -580,6 +591,29 @@ async function loadImportHistory() {
   }
 }
 
+async function loadImportErrors(taskId: number) {
+  importErrorTaskId.value = taskId;
+  importErrorsLoading.value = true;
+  try {
+    const query = new URLSearchParams({ taskId: String(taskId), pageNum: "1", pageSize: "100" });
+    const response = await fetch(`/api/admin/invoice-imports/errors?${query}`, { credentials: "include" });
+    const result = await readApi<{ records: ImportRowError[] }>(response, "导入失败原因加载失败");
+    importRowErrors.value = result.records;
+    return result.records;
+  } catch (error) {
+    importRowErrors.value = [];
+    ElMessage.error(error instanceof Error ? error.message : "导入失败原因加载失败");
+    return [];
+  } finally {
+    importErrorsLoading.value = false;
+  }
+}
+
+function importErrorSummary(error: ImportRowError) {
+  const taxpayer = error.taxpayerId ? `（纳税人识别号：${error.taxpayerId}）` : "";
+  return `第 ${error.rowNo} 行：${error.errorMessage}${taxpayer}`;
+}
+
 async function submitImport() {
   if (!importFile.value) return;
   importSubmitting.value = true;
@@ -596,7 +630,15 @@ async function submitImport() {
     importFile.value = null;
     importFileName.value = "";
     if (importFileInput.value) importFileInput.value.value = "";
-    ElMessage.success(`导入完成：成功 ${result.successCount} 条，失败 ${result.failureCount} 条；成功数据已生成草稿`);
+    if (result.failureCount > 0) {
+      const errors = await loadImportErrors(result.id);
+      const firstReason = errors[0] ? `第 ${errors[0].rowNo} 行，${errors[0].errorMessage}` : `共有 ${result.failureCount} 条数据校验失败`;
+      ElMessage.error(`导入失败：${firstReason}`);
+    } else {
+      importErrorTaskId.value = null;
+      importRowErrors.value = [];
+      ElMessage.success(`导入完成：成功 ${result.successCount} 条；数据已生成草稿`);
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "导入失败，请检查后端服务和 Excel 内容");
   } finally {
@@ -1187,12 +1229,38 @@ async function applyPermissionSelection() {
             <p>支持 .xlsx，单次最多 1,000 条；仅导入抬头信息，不包含主体，导入后生成草稿。</p>
           </div>
           <el-button link type="primary" tag="a" :href="importTemplateUrl"><el-icon><Download /></el-icon>下载导入模板</el-button>
+          <el-alert
+            v-if="importRowErrors.length"
+            class="import-error-alert"
+            type="error"
+            :closable="false"
+            show-icon
+            title="导入失败"
+          >
+            <template #default>
+              <p v-for="error in importRowErrors" :key="error.id">导入失败：{{ importErrorSummary(error) }}</p>
+            </template>
+          </el-alert>
         </el-tab-pane>
         <el-tab-pane label="导入历史">
           <div v-for="task in importHistory" :key="task.id" class="history-row">
             <span>{{ task.createdAt }} · {{ task.createdBy }}<small>{{ task.originalFileName }} · {{ task.taskNo }}</small></span>
-            <strong>成功 {{ task.successCount }}，失败 {{ task.failureCount }}</strong>
+            <div class="history-result">
+              <strong>成功 {{ task.successCount }}，失败 {{ task.failureCount }}</strong>
+              <el-button v-if="task.failureCount" link type="danger" :loading="importErrorsLoading && importErrorTaskId === task.id" @click="loadImportErrors(task.id)">查看失败原因</el-button>
+            </div>
           </div>
+          <el-alert
+            v-if="importRowErrors.length"
+            class="import-error-alert"
+            type="error"
+            :closable="false"
+            title="失败明细"
+          >
+            <template #default>
+              <p v-for="error in importRowErrors" :key="error.id">{{ importErrorSummary(error) }}</p>
+            </template>
+          </el-alert>
           <div aria-label="导入历史分页" class="history-pagination">
             <el-pagination
               v-model:current-page="importHistoryPageNum"

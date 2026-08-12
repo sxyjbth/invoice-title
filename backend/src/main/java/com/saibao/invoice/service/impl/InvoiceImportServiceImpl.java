@@ -166,13 +166,6 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
                 header.createCell(index).setCellValue(HEADERS.get(index));
                 sheet.setColumnWidth(index, index == 2 ? 12000 : 6000);
             }
-            Row example = sheet.createRow(1);
-            String[] values = {"杭州赛宝卓越技术有限公司", "91110400MADFF1HE1T",
-                    "浙江省杭州市钱塘区临江街道纬五路3688号临江科创园6号楼12楼", "4008696096",
-                    "宁波银行股份有限公司北京丰台支行", "86041110000957180"};
-            for (int index = 0; index < values.length; index++) {
-                example.createCell(index).setCellValue(values[index]);
-            }
             workbook.write(output);
             return output.toByteArray();
         } catch (IOException exception) {
