@@ -398,9 +398,9 @@ const filteredPermissions = computed(() => permissions.value.filter((permission)
   const keywordMatches = !value || permission.targetName.toLowerCase().includes(value) || permission.targetId.toLowerCase().includes(value);
   return subjectMatches && keywordMatches;
 }));
-const activePermissionProfile = computed(() => permissionProfiles.value.find(
+const activePermissionProfile = computed<SubjectPermissionProfile | null>(() => permissionProfiles.value.find(
   (profile) => profile.id === selectedPermissionProfileId.value,
-) ?? permissionProfiles.value[0]!);
+) ?? permissionProfiles.value[0] ?? null);
 const filteredLogs = computed(() => operationLogs.value.filter((log) => {
   const value = logKeyword.value.trim().toLowerCase();
   return (!logModule.value || log.module === logModule.value)
@@ -894,6 +894,8 @@ async function initializePermissionProfiles() {
   if (permissionProfiles.value.length > 0) {
     selectedPermissionProfileId.value = permissionProfiles.value[0].id;
     await loadPermissionProfile(selectedPermissionProfileId.value);
+  } else {
+    selectedPermissionProfileId.value = 0;
   }
 }
 
@@ -924,6 +926,8 @@ async function selectPermissionProfile(subjectId: number) {
 }
 
 async function loadDirectory() {
+  const profile = activePermissionProfile.value;
+  if (!profile) return;
   directoryLoading.value = true;
   const query = new URLSearchParams({
     pageNum: String(directoryPageNum.value),
@@ -931,7 +935,7 @@ async function loadDirectory() {
   });
   if (directoryKeyword.value.trim()) query.set("keyword", directoryKeyword.value.trim());
   if (permissionForm.targetType === "USER") {
-    query.set("subjectId", String(activePermissionProfile.value.id));
+    query.set("subjectId", String(profile.id));
     if (employeePermissionStatus.value !== "ALL") query.set("permissionStatus", employeePermissionStatus.value);
   }
   const path = permissionForm.targetType === "USER" ? "employees" : "departments";
@@ -953,30 +957,34 @@ async function loadDirectory() {
 }
 
 function openPermissionEditor(targetType: "USER" | "DEPARTMENT") {
+  const profile = activePermissionProfile.value;
+  if (!profile) return;
   permissionForm.targetType = targetType;
-  permissionForm.subjectName = activePermissionProfile.value.subjectName;
+  permissionForm.subjectName = profile.subjectName;
   directoryKeyword.value = "";
   directoryPageNum.value = 1;
   employeePermissionStatus.value = "ALL";
-  selectedDepartmentIds.value = activePermissionProfile.value.departments.map((department) => department.id);
+  selectedDepartmentIds.value = profile.departments.map((department) => department.id);
   Object.keys(employeeEnabledDraft).forEach((key) => delete employeeEnabledDraft[Number(key)]);
   permissionDialogVisible.value = true;
   void loadDirectory();
 }
 
 function inheritedEmployeeEnabled(employee: DingEmployee) {
-  return activePermissionProfile.value.allEmployeesVisible
-    || activePermissionProfile.value.departments.some((department) => department.id === employee.departmentId);
+  const profile = activePermissionProfile.value;
+  return Boolean(profile && (profile.allEmployeesVisible
+    || profile.departments.some((department) => department.id === employee.departmentId)));
 }
 
 /** 个人规则优先；没有个人规则时直接呈现全员或部门授权的最终状态。 */
 function resolveEmployeeEnabled(employee: DingEmployee) {
-  const explicitRule = activePermissionProfile.value.employeeRules.find((rule) => rule.id === employee.id);
+  const explicitRule = activePermissionProfile.value?.employeeRules.find((rule) => rule.id === employee.id);
   return explicitRule ? explicitRule.effect === "ALLOW" : inheritedEmployeeEnabled(employee);
 }
 
 function updateAllEmployeesVisibility(enabled: boolean) {
   const profile = activePermissionProfile.value;
+  if (!profile) return;
   profile.allEmployeesVisible = enabled;
   profile.visibleCount = enabled
     ? 386
@@ -985,21 +993,23 @@ function updateAllEmployeesVisibility(enabled: boolean) {
 }
 
 async function savePermissionConfiguration() {
+  const profile = activePermissionProfile.value;
+  if (!profile) return;
   permissionSaving.value = true;
   try {
-    const response = await fetch(`/api/admin/subjects/${activePermissionProfile.value.id}/permission-profile`, {
+    const response = await fetch(`/api/admin/subjects/${profile.id}/permission-profile`, {
       method: "PUT",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        allEmployeeVisible: activePermissionProfile.value.allEmployeesVisible,
-        departmentIds: activePermissionProfile.value.departments.map((department) => department.id),
-        employeeRules: activePermissionProfile.value.employeeRules.map((rule) => ({ employeeId: rule.id, effect: rule.effect })),
+        allEmployeeVisible: profile.allEmployeesVisible,
+        departmentIds: profile.departments.map((department) => department.id),
+        employeeRules: profile.employeeRules.map((rule) => ({ employeeId: rule.id, effect: rule.effect })),
       }),
     });
     if (!response.ok) await readApi(response, "权限保存失败");
-    if (!testMode) await loadPermissionProfile(activePermissionProfile.value.id);
-    ElMessage.success(`${activePermissionProfile.value.subjectName}权限已保存并立即生效`);
+    if (!testMode) await loadPermissionProfile(profile.id);
+    ElMessage.success(`${profile.subjectName}权限已保存并立即生效`);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "权限保存失败");
   } finally {
@@ -1009,6 +1019,7 @@ async function savePermissionConfiguration() {
 
 function applyPermissionSelection() {
   const profile = activePermissionProfile.value;
+  if (!profile) return;
   if (permissionForm.targetType === "DEPARTMENT") {
     const selected = new Map(profile.departments.map((department) => [department.id, department]));
     directoryDepartments.value.forEach((department) => {
@@ -1197,7 +1208,7 @@ function openLogDetail(log: OperationLog) {
             </button>
           </aside>
 
-          <section class="permission-detail-card">
+          <section v-if="activePermissionProfile" class="permission-detail-card">
             <header>
               <div>
                 <h2>{{ activePermissionProfile.subjectName }}</h2>
@@ -1252,6 +1263,13 @@ function openLogDetail(log: OperationLog) {
               <p>权限保存后实时生效，员工调整后按钉钉通讯录自动更新。</p>
               <el-button type="primary" size="large" :loading="permissionSaving" @click="savePermissionConfiguration">保存权限</el-button>
             </footer>
+          </section>
+
+          <section v-else class="permission-empty-state">
+            <span class="permission-level-icon"><el-icon><OfficeBuilding /></el-icon></span>
+            <h2>暂无主体可配置权限</h2>
+            <p>请先新增并启用一个主体，再为员工或部门配置查看权限。</p>
+            <el-button type="primary" @click="switchMenu('subjects')">前往主体管理</el-button>
           </section>
         </section>
       </main>

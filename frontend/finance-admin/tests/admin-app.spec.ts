@@ -167,6 +167,18 @@ describe("财务端发票抬头管理", () => {
     expect(permissionPage.text()).toContain("当前可见 46 人");
   });
 
+  it("没有主体时主体权限页面显示引导而不是白屏", async () => {
+    const wrapper = mount(AdminApp, { global });
+    await wrapper.findAll("nav button").find((item) => item.text().includes("主体权限"))!.trigger("click");
+
+    (wrapper.vm as any).permissionProfiles = [];
+    await nextTick();
+
+    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
+    expect(permissionPage.text()).toContain("暂无主体可配置权限");
+    expect(permissionPage.text()).toContain("前往主体管理");
+  });
+
   it("员工权限以启用开关呈现部门授权结果并支持按最终状态筛选", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ records: [{
       id: 1,

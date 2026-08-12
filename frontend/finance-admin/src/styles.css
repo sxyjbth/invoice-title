@@ -107,6 +107,9 @@ td small { margin-top: 5px; color: #8b96a9; font-size: 11px; }
 .permission-detail-card > footer { display: flex; min-height: 82px; align-items: center; justify-content: space-between; gap: 20px; padding: 0 26px; }
 .permission-detail-card > footer p { margin: 0; color: #8b96a9; font-size: 12px; }
 .permission-detail-card > footer .el-button { min-width: 116px; }
+.permission-empty-state { min-height: 360px; display: grid; place-items: center; align-content: center; gap: 14px; padding: 40px; border: 1px solid var(--line); border-radius: 11px; background: #fff; text-align: center; box-shadow: 0 4px 16px rgba(20,42,75,.03); }
+.permission-empty-state h2, .permission-empty-state p { margin: 0; }
+.permission-empty-state p { color: #8b96a9; }
 .log-detail dl { display: grid; grid-template-columns: 92px 1fr; margin: 0; border-top: 1px solid var(--line); }
 .log-detail dt, .log-detail dd { min-height: 48px; margin: 0; padding: 14px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .log-detail dt { color: #8b96a9; }.log-detail dd { color: #344054; }
