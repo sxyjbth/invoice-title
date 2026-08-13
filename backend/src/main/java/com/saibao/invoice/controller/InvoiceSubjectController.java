@@ -2,6 +2,7 @@ package com.saibao.invoice.controller;
 
 import com.saibao.invoice.dto.InvoiceSubjectSaveDTO;
 import com.saibao.invoice.dto.SubjectPageQueryDTO;
+import com.saibao.invoice.dto.SubjectTitleBindingDTO;
 import com.saibao.invoice.service.IInvoiceSubjectService;
 import com.saibao.invoice.vo.InvoiceSubjectVO;
 import com.saibao.invoice.vo.PageResult;
@@ -55,5 +56,13 @@ public class InvoiceSubjectController {
             @Parameter(description = "状态：ENABLED-启用，DISABLED-停用", required = true) @RequestParam String status,
             @Parameter(description = "操作人的钉钉用户 ID", required = true) @RequestParam String operatorUserId) {
         service.changeStatus(id, status, operatorUserId);
+    }
+
+    @PutMapping("/{id}/title-binding")
+    @Operation(summary = "为主体绑定发票抬头", description = "一个主体仅保留一条抬头绑定关系；再次绑定时替换原关系")
+    public void bindTitle(
+            @Parameter(description = "主体主键 ID", required = true) @PathVariable Long id,
+            @Valid @RequestBody SubjectTitleBindingDTO request) {
+        service.bindTitle(id, request);
     }
 }

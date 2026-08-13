@@ -121,6 +121,60 @@ class FinanceAdministrationCrudWebTest {
     }
 
     @Test
+    void subjectCanBindAnInvoiceTitleAndExposeItsNameInTheSubjectList() throws Exception {
+        long titleId = Long.parseLong(send(administrator, "POST", "/api/admin/invoice-titles", """
+                {"companyName":"待绑定抬头有限公司","taxpayerId":"91330100BINDTITLE001",
+                 "subjectIds":[],"status":"DRAFT"}
+                """).body());
+        long subjectId = Long.parseLong(send(administrator, "POST", "/api/admin/subjects", """
+                {"subjectName":"待绑定主体","status":"ENABLED","sortNo":98,"operatorUserId":"admin"}
+                """).body());
+
+        HttpResponse<String> bound = send(administrator, "PUT",
+                "/api/admin/subjects/" + subjectId + "/title-binding",
+                "{\"titleId\":" + titleId + ",\"operatorUserId\":\"admin\"}");
+
+        assertThat(bound.statusCode()).isEqualTo(200);
+        assertThat(get(administrator, "/api/admin/subjects?pageNum=1&pageSize=20&keyword="
+                + java.net.URLEncoder.encode("待绑定主体", java.nio.charset.StandardCharsets.UTF_8)).body())
+                .contains("\"boundTitleId\":" + titleId, "\"boundTitleName\":\"待绑定抬头有限公司\"");
+        assertThat(get(administrator, "/api/admin/invoice-titles/" + titleId).body())
+                .contains("\"subjectIds\":[" + subjectId + "]");
+    }
+
+    @Test
+    void rebindingShouldReplaceBothSidesOfTheOneToOneRelationship() throws Exception {
+        long firstTitleId = Long.parseLong(send(administrator, "POST", "/api/admin/invoice-titles", """
+                {"companyName":"一对一旧抬头有限公司","taxpayerId":"91330100BINDOLD001",
+                 "subjectIds":[],"status":"DRAFT"}
+                """).body());
+        long secondTitleId = Long.parseLong(send(administrator, "POST", "/api/admin/invoice-titles", """
+                {"companyName":"一对一新抬头有限公司","taxpayerId":"91330100BINDNEW001",
+                 "subjectIds":[],"status":"DRAFT"}
+                """).body());
+        long firstSubjectId = Long.parseLong(send(administrator, "POST", "/api/admin/subjects", """
+                {"subjectName":"一对一旧主体","status":"ENABLED","sortNo":96,"operatorUserId":"admin"}
+                """).body());
+        long secondSubjectId = Long.parseLong(send(administrator, "POST", "/api/admin/subjects", """
+                {"subjectName":"一对一新主体","status":"ENABLED","sortNo":97,"operatorUserId":"admin"}
+                """).body());
+        send(administrator, "PUT", "/api/admin/subjects/" + firstSubjectId + "/title-binding",
+                "{\"titleId\":" + firstTitleId + ",\"operatorUserId\":\"admin\"}");
+        send(administrator, "PUT", "/api/admin/subjects/" + secondSubjectId + "/title-binding",
+                "{\"titleId\":" + secondTitleId + ",\"operatorUserId\":\"admin\"}");
+
+        HttpResponse<String> rebound = send(administrator, "PUT",
+                "/api/admin/subjects/" + secondSubjectId + "/title-binding",
+                "{\"titleId\":" + firstTitleId + ",\"operatorUserId\":\"admin\"}");
+
+        assertThat(rebound.statusCode()).isEqualTo(200);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM invoice_title_subject WHERE subject_id = ?", Long.class, secondSubjectId)).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM invoice_title_subject WHERE title_id = ?", Long.class, firstTitleId)).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM invoice_title_subject WHERE title_id = ? AND subject_id = ?", Long.class, firstTitleId, secondSubjectId)).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject("SELECT subject_names FROM invoice_title WHERE id = ?", String.class, secondTitleId)).isEmpty();
+    }
+
+    @Test
     void directoryEndpointsUseServerPaginationAndFuzzySearchAcrossEmployeeFields() throws Exception {
         String[][] searches = {{"示例", "1"}, {"SB0001", "1"}, {"技术中心", "2"}, {"13800000001", "1"}};
         for (String[] search : searches) {

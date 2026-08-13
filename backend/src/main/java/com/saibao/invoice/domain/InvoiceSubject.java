@@ -15,6 +15,10 @@ public class InvoiceSubject {
     private Boolean allEmployeeVisible;
     private Integer sortNo;
     private Long employeeCount;
+    /** 当前绑定的抬头主键；未绑定时为空。 */
+    private Long boundTitleId;
+    /** 当前绑定的抬头公司名称；未绑定时为空。 */
+    private String boundTitleName;
     private String createdBy;
     private LocalDateTime createdAt;
     private String updatedBy;

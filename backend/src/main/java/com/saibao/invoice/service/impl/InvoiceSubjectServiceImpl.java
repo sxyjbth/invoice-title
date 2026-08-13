@@ -1,14 +1,18 @@
 package com.saibao.invoice.service.impl;
 
 import com.saibao.invoice.domain.InvoiceSubject;
+import com.saibao.invoice.domain.InvoiceTitle;
 import com.saibao.invoice.dto.InvoiceSubjectSaveDTO;
 import com.saibao.invoice.dto.SubjectPageQueryDTO;
+import com.saibao.invoice.dto.SubjectTitleBindingDTO;
 import com.saibao.invoice.mapper.InvoiceSubjectMapper;
+import com.saibao.invoice.mapper.InvoiceTitleMapper;
 import com.saibao.invoice.service.IInvoiceSubjectService;
 import com.saibao.invoice.vo.InvoiceSubjectVO;
 import com.saibao.invoice.vo.PageResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -21,6 +25,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class InvoiceSubjectServiceImpl implements IInvoiceSubjectService {
     private final InvoiceSubjectMapper mapper;
+    private final InvoiceTitleMapper invoiceTitleMapper;
 
     @Override
     public PageResult<InvoiceSubjectVO> page(SubjectPageQueryDTO query) {
@@ -81,6 +86,36 @@ public class InvoiceSubjectServiceImpl implements IInvoiceSubjectService {
         if (mapper.updateStatus(id, status, operatorUserId) == 0) throw new IllegalArgumentException("主体不存在：" + id);
     }
 
+    @Override
+    @Transactional
+    public void bindTitle(Long id, SubjectTitleBindingDTO request) {
+        InvoiceSubject subject = mapper.selectById(id);
+        if (subject == null) throw new IllegalArgumentException("主体不存在：" + id);
+        InvoiceTitle selectedTitle = invoiceTitleMapper.selectById(request.getTitleId());
+        if (selectedTitle == null) throw new IllegalArgumentException("发票抬头不存在：" + request.getTitleId());
+
+        // 主体列表发起绑定时以本次选择为准：先移除该主体的旧关系，再写入新关系。
+        List<Long> affectedTitleIds = invoiceTitleMapper.selectTitleIdsBySubjectId(id);
+        invoiceTitleMapper.deleteSubjectBindings(id);
+        // 同时清理所选抬头的原主体，保证主体与抬头之间是真正的一对一关系。
+        invoiceTitleMapper.deleteTitleSubjects(selectedTitle.getId());
+        invoiceTitleMapper.insertTitleSubject(selectedTitle.getId(), id, request.getOperatorUserId());
+        affectedTitleIds.stream().distinct().forEach(titleId -> refreshSubjectNames(titleId, request.getOperatorUserId()));
+        refreshSubjectNames(selectedTitle.getId(), request.getOperatorUserId());
+    }
+
+    private void refreshSubjectNames(Long titleId, String operatorUserId) {
+        InvoiceTitle title = invoiceTitleMapper.selectById(titleId);
+        if (title == null) return;
+        List<Long> subjectIds = invoiceTitleMapper.selectSubjectIds(titleId);
+        List<InvoiceSubject> boundSubjects = subjectIds.isEmpty() ? Collections.emptyList() : mapper.selectByIds(subjectIds);
+        title.setSubjectNames(boundSubjects.stream().map(InvoiceSubject::getSubjectName)
+                .reduce((left, right) -> left + "," + right).orElse(""));
+        title.setUpdatedBy(operatorUserId);
+        title.setUpdatedAt(LocalDateTime.now());
+        if (invoiceTitleMapper.update(title) == 0) throw new IllegalArgumentException("发票抬头不存在：" + titleId);
+    }
+
     private String normalizeCode(String subjectCode) {
         if (subjectCode == null || subjectCode.isBlank()) return null;
         return subjectCode.trim().toUpperCase(Locale.ROOT);
@@ -99,6 +134,7 @@ public class InvoiceSubjectServiceImpl implements IInvoiceSubjectService {
         vo.setId(source.getId()); vo.setSubjectCode(source.getSubjectCode()); vo.setSubjectName(source.getSubjectName());
         vo.setStatus(source.getStatus()); vo.setSortNo(source.getSortNo());
         vo.setEmployeeCount(source.getEmployeeCount()); vo.setUpdatedBy(source.getUpdatedBy()); vo.setUpdatedAt(source.getUpdatedAt());
+        vo.setBoundTitleId(source.getBoundTitleId()); vo.setBoundTitleName(source.getBoundTitleName());
         return vo;
     }
 }

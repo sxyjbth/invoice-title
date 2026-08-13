@@ -42,6 +42,10 @@
         SELECT subject_id FROM invoice_title_subject WHERE title_id = #{titleId} ORDER BY id ASC
     </select>
 
+    <select id="selectTitleIdsBySubjectId" resultType="long">
+        SELECT title_id FROM invoice_title_subject WHERE subject_id = #{subjectId} ORDER BY id ASC
+    </select>
+
     <select id="selectPublishedSubjectBindings" resultType="com.saibao.invoice.domain.PublishedSubjectBinding">
         SELECT s.id AS subject_id, s.subject_name, t.id AS title_id, t.company_name
         FROM invoice_title_subject its
@@ -81,6 +85,10 @@
 
     <delete id="deleteTitleSubjects">
         DELETE FROM invoice_title_subject WHERE title_id = #{titleId}
+    </delete>
+
+    <delete id="deleteSubjectBindings">
+        DELETE FROM invoice_title_subject WHERE subject_id = #{subjectId}
     </delete>
 
     <update id="updateCurrentPublishedVersion">

@@ -15,7 +15,17 @@
 
     <select id="selectPage" resultType="com.saibao.invoice.domain.InvoiceSubject">
         SELECT s.id, s.subject_code, s.subject_name, s.status, s.sort_no, s.updated_by, s.updated_at,
-               (SELECT COUNT(*) FROM subject_permission p WHERE p.subject_id = s.id AND p.deleted = 0 AND p.status = 'ENABLED') AS employee_count
+               (SELECT COUNT(*) FROM subject_permission p WHERE p.subject_id = s.id AND p.deleted = 0 AND p.status = 'ENABLED') AS employee_count,
+               (SELECT t.id FROM invoice_title_subject its
+                INNER JOIN invoice_title t ON t.id = its.title_id AND t.deleted = 0
+                WHERE its.subject_id = s.id
+                ORDER BY CASE WHEN t.status = 'PUBLISHED' THEN 0 WHEN t.status = 'DRAFT' THEN 1 ELSE 2 END,
+                         t.updated_at DESC, t.id DESC LIMIT 1) AS bound_title_id,
+               (SELECT t.company_name FROM invoice_title_subject its
+                INNER JOIN invoice_title t ON t.id = its.title_id AND t.deleted = 0
+                WHERE its.subject_id = s.id
+                ORDER BY CASE WHEN t.status = 'PUBLISHED' THEN 0 WHEN t.status = 'DRAFT' THEN 1 ELSE 2 END,
+                         t.updated_at DESC, t.id DESC LIMIT 1) AS bound_title_name
         FROM invoice_subject s
         <include refid="conditions"/>
         ORDER BY s.sort_no ASC, s.updated_at DESC, s.id DESC

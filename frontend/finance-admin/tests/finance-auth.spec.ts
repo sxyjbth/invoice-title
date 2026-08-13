@@ -1,6 +1,6 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import FinanceLoginView from "../src/components/FinanceLoginView.vue";
 import FinanceAccountManagement from "../src/components/FinanceAccountManagement.vue";
@@ -8,6 +8,11 @@ import ChangePasswordDialog from "../src/components/ChangePasswordDialog.vue";
 import { elementPlusOptions } from "../src/element-plus";
 
 const global = { plugins: [[ElementPlus, elementPlusOptions]] } as any;
+
+afterEach(() => {
+  document.body.innerHTML = "";
+  vi.restoreAllMocks();
+});
 
 describe("财务端账号体系", () => {
   it("账号密码登录并明确忘记密码处理方式", () => {
@@ -33,6 +38,52 @@ describe("财务端账号体系", () => {
     expect(wrapper.text()).toContain("重置密码");
     expect(wrapper.text()).toContain("停用");
     expect(wrapper.find('[aria-label="财务账号列表分页"]').exists()).toBe(true);
+  });
+
+  it("新增财务账号校验必填格式并要求二次确认初始密码", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    const wrapper = mount(FinanceAccountManagement, {
+      global,
+      attachTo: document.body,
+      props: { accounts: [], total: 0, loading: false },
+    });
+
+    await wrapper.findAll("button").find((item) => item.text().includes("新增财务账号"))!.trigger("click");
+    await nextTick();
+    expect(document.body.textContent).toContain("确认初始密码");
+
+    await wrapper.get('input[placeholder="建议使用姓名拼音或工号"]').setValue("finance.sun");
+    await wrapper.get('input[placeholder="用于页面显示和操作记录"]').setValue("孙财务");
+    await wrapper.get('input[placeholder="8–72 位，包含字母和数字"]').setValue("Finance123");
+    await wrapper.get('input[placeholder="请再次输入初始密码"]').setValue("Different123");
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("确认创建"))!.click();
+    await flushPromises();
+
+    expect(document.body.textContent).toContain("两次输入的密码不一致");
+    expect(request).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("超级管理员重置密码时也要求二次确认", async () => {
+    const wrapper = mount(FinanceAccountManagement, {
+      global,
+      attachTo: document.body,
+      props: {
+        accounts: [{ id: 2, username: "wang.finance", displayName: "王财务", status: "ENABLED" }],
+        total: 1,
+        loading: false,
+      },
+    });
+
+    await flushPromises();
+    await wrapper.findAll(".el-button").find((button) => button.text().includes("重置密码"))!.trigger("click");
+    await nextTick();
+    expect(document.body.textContent).toContain("确认新密码");
+    wrapper.unmount();
   });
 
   it("财务人员只能通过本人改密表单修改自己的密码", async () => {

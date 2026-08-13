@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from "element-plus";
 import { formatDateTime } from "../utils/date";
 import { Plus, Refresh, Search } from "@element-plus/icons-vue";
 
@@ -29,17 +29,48 @@ const createVisible = ref(false);
 const resetVisible = ref(false);
 const submitting = ref(false);
 const selectedAccount = ref<FinanceAccount | null>(null);
-const createForm = reactive({ username: "", displayName: "", initialPassword: "" });
-const resetForm = reactive({ newPassword: "" });
+const createFormRef = ref<FormInstance>();
+const resetFormRef = ref<FormInstance>();
+const createForm = reactive({ username: "", displayName: "", initialPassword: "", confirmPassword: "" });
+const resetForm = reactive({ newPassword: "", confirmPassword: "" });
+const passwordPattern = /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/;
+const createRules: FormRules<typeof createForm> = {
+  username: [
+    { required: true, message: "请输入登录账号", trigger: "blur" },
+    { pattern: /^[A-Za-z0-9._-]{4,50}$/, message: "账号须为 4–50 位字母、数字、点、下划线或短横线", trigger: "blur" },
+  ],
+  displayName: [
+    { required: true, message: "请输入财务人员姓名", trigger: "blur" },
+    { max: 100, message: "姓名不能超过 100 个字符", trigger: "blur" },
+  ],
+  initialPassword: [
+    { required: true, message: "请输入初始密码", trigger: "blur" },
+    { pattern: passwordPattern, message: "密码须为 8–72 位并同时包含字母和数字", trigger: "blur" },
+  ],
+  confirmPassword: [
+    { required: true, message: "请再次输入初始密码", trigger: "blur" },
+    { validator: (_rule, value, callback) => value === createForm.initialPassword ? callback() : callback(new Error("两次输入的密码不一致")), trigger: "blur" },
+  ],
+};
+const resetRules: FormRules<typeof resetForm> = {
+  newPassword: [
+    { required: true, message: "请输入新密码", trigger: "blur" },
+    { pattern: passwordPattern, message: "密码须为 8–72 位并同时包含字母和数字", trigger: "blur" },
+  ],
+  confirmPassword: [
+    { required: true, message: "请再次输入新密码", trigger: "blur" },
+    { validator: (_rule, value, callback) => value === resetForm.newPassword ? callback() : callback(new Error("两次输入的密码不一致")), trigger: "blur" },
+  ],
+};
 
 function openCreate() {
-  Object.assign(createForm, { username: "", displayName: "", initialPassword: "" });
+  Object.assign(createForm, { username: "", displayName: "", initialPassword: "", confirmPassword: "" });
   createVisible.value = true;
 }
 
 function openReset(account: FinanceAccount) {
   selectedAccount.value = account;
-  resetForm.newPassword = "";
+  Object.assign(resetForm, { newPassword: "", confirmPassword: "" });
   resetVisible.value = true;
 }
 
@@ -51,13 +82,18 @@ async function request(url: string, options: RequestInit) {
 }
 
 async function createAccount() {
-  if (!createForm.username.trim() || !createForm.displayName.trim() || !createForm.initialPassword) {
-    ElMessage.warning("请填写完整账号信息");
+  if (createForm.initialPassword !== createForm.confirmPassword) {
+    ElMessage.warning("两次输入的密码不一致");
     return;
   }
+  if (!await createFormRef.value?.validate().catch(() => false)) return;
   submitting.value = true;
   try {
-    await request("/api/admin/finance-users", { method: "POST", body: JSON.stringify(createForm) });
+    await request("/api/admin/finance-users", { method: "POST", body: JSON.stringify({
+      username: createForm.username.trim(),
+      displayName: createForm.displayName.trim(),
+      initialPassword: createForm.initialPassword,
+    }) });
     ElMessage.success("财务账号创建成功");
     createVisible.value = false;
     emit("refresh");
@@ -67,10 +103,14 @@ async function createAccount() {
 }
 
 async function resetPassword() {
-  if (!selectedAccount.value || !resetForm.newPassword) return;
+  if (resetForm.newPassword !== resetForm.confirmPassword) {
+    ElMessage.warning("两次输入的密码不一致");
+    return;
+  }
+  if (!selectedAccount.value || !await resetFormRef.value?.validate().catch(() => false)) return;
   submitting.value = true;
   try {
-    await request(`/api/admin/finance-users/${selectedAccount.value.id}/reset-password`, { method: "POST", body: JSON.stringify(resetForm) });
+    await request(`/api/admin/finance-users/${selectedAccount.value.id}/reset-password`, { method: "POST", body: JSON.stringify({ newPassword: resetForm.newPassword }) });
     ElMessage.success("密码已重置，请将新密码安全告知本人");
     resetVisible.value = false;
   } catch (error) {
@@ -125,17 +165,21 @@ async function toggleStatus(account: FinanceAccount) {
 
     <el-dialog v-model="createVisible" title="新增财务账号" width="520px" :teleported="false">
       <el-alert title="财务人员首次登录后可自行修改密码；忘记密码由超级管理员重置。" type="info" :closable="false" />
-      <el-form label-position="top" class="dialog-form">
-        <el-form-item label="登录账号"><el-input v-model="createForm.username" placeholder="建议使用姓名拼音或工号" /></el-form-item>
-        <el-form-item label="财务人员姓名"><el-input v-model="createForm.displayName" placeholder="用于页面显示和操作记录" /></el-form-item>
-        <el-form-item label="初始密码"><el-input v-model="createForm.initialPassword" type="password" show-password placeholder="8–72 位，包含字母和数字" /></el-form-item>
+      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top" class="dialog-form">
+        <el-form-item label="登录账号" prop="username"><el-input v-model="createForm.username" placeholder="建议使用姓名拼音或工号" /></el-form-item>
+        <el-form-item label="财务人员姓名" prop="displayName"><el-input v-model="createForm.displayName" placeholder="用于页面显示和操作记录" /></el-form-item>
+        <el-form-item label="初始密码" prop="initialPassword"><el-input v-model="createForm.initialPassword" type="password" show-password autocomplete="new-password" placeholder="8–72 位，包含字母和数字" /></el-form-item>
+        <el-form-item label="确认初始密码" prop="confirmPassword"><el-input v-model="createForm.confirmPassword" type="password" show-password autocomplete="new-password" placeholder="请再次输入初始密码" @keyup.enter="createAccount" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" :loading="submitting" @click="createAccount">确认创建</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="resetVisible" title="重置密码" width="460px" :teleported="false">
       <p class="reset-description">正在为 <strong>{{ selectedAccount?.displayName }}</strong>（{{ selectedAccount?.username }}）重置密码。</p>
-      <el-form label-position="top"><el-form-item label="新密码"><el-input v-model="resetForm.newPassword" type="password" show-password placeholder="8–72 位，包含字母和数字" /></el-form-item></el-form>
+      <el-form ref="resetFormRef" :model="resetForm" :rules="resetRules" label-position="top">
+        <el-form-item label="新密码" prop="newPassword"><el-input v-model="resetForm.newPassword" type="password" show-password autocomplete="new-password" placeholder="8–72 位，包含字母和数字" /></el-form-item>
+        <el-form-item label="确认新密码" prop="confirmPassword"><el-input v-model="resetForm.confirmPassword" type="password" show-password autocomplete="new-password" placeholder="请再次输入新密码" @keyup.enter="resetPassword" /></el-form-item>
+      </el-form>
       <template #footer><el-button @click="resetVisible = false">取消</el-button><el-button type="primary" :loading="submitting" @click="resetPassword">确认重置</el-button></template>
     </el-dialog>
   </section>

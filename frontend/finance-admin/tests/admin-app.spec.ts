@@ -149,9 +149,33 @@ describe("财务端发票抬头管理", () => {
 
     expect(wrapper.get("tbody").text()).toContain("杭州主体");
     expect(wrapper.get("main").text()).not.toContain("主体编码");
-    expect(wrapper.get("main").text()).not.toContain("关联抬头");
+    expect(wrapper.get("main").text()).toContain("绑定抬头");
+    expect(wrapper.get("tbody").text()).toContain("杭州赛宝卓越技术有限公司");
     expect(wrapper.find('input[placeholder="搜索主体名称"]').exists()).toBe(true);
     expect(wrapper.find('[aria-label="主体管理列表分页"]').exists()).toBe(true);
+  });
+
+  it("主体操作栏可打开抬头绑定窗口并将选择结果保存到后端", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 200 }));
+    const wrapper = mount(AdminApp, { global, attachTo: document.body });
+    await wrapper.findAll("nav button").find((item) => item.text().includes("主体管理"))!.trigger("click");
+
+    await wrapper.findAll("tbody tr")[0].findAll("button")
+      .find((item) => item.text().includes("绑定抬头"))!.trigger("click");
+    await nextTick();
+    expect(document.body.textContent).toContain("为杭州主体绑定抬头");
+
+    (wrapper.vm as any).bindingTitleId = 1;
+    await nextTick();
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("确认绑定"))!.click();
+    await flushPromises();
+
+    expect(request).toHaveBeenCalledWith("/api/admin/subjects/1/title-binding", expect.objectContaining({
+      method: "PUT",
+      body: expect.stringContaining('"titleId":1'),
+    }));
+    wrapper.unmount();
   });
 
   it("新增主体只填写名称且请求不再包含主体编码", async () => {
@@ -275,6 +299,8 @@ describe("财务端发票抬头管理", () => {
     await nextTick();
     await flushPromises();
     expect(document.body.querySelector('input[placeholder="搜索姓名、工号、部门或手机号"]')).not.toBeNull();
+    expect(Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button")).some((button) => button.textContent?.includes("搜索"))).toBe(true);
+    expect(Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button")).some((button) => button.textContent?.includes("重置"))).toBe(true);
     expect(document.body.textContent).toContain("权限状态");
     expect(document.body.textContent).toContain("已启用");
     expect(document.body.textContent).toContain("已关闭");

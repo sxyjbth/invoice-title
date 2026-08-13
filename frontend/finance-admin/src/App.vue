@@ -47,6 +47,8 @@ type InvoiceSubject = {
   name: string;
   status: "ENABLED" | "DISABLED";
   employeeCount: number;
+  boundTitleId?: number | null;
+  boundTitleName?: string | null;
   updatedAt: string;
   updatedBy: string;
   sortNo: number;
@@ -175,9 +177,9 @@ const statusOptions = computed<Array<{ code: "ALL" | StatusCode; label: string; 
 ]);
 
 const subjects = ref<InvoiceSubject[]>([
-  { id: 1, code: "HZ", name: "杭州主体", status: "ENABLED", employeeCount: 186, updatedAt: "2026-08-07 15:46", updatedBy: "王财务", sortNo: 10 },
-  { id: 2, code: "BJ", name: "北京主体", status: "ENABLED", employeeCount: 92, updatedAt: "2026-08-06 10:22", updatedBy: "李会计", sortNo: 20 },
-  { id: 3, code: "SH", name: "上海主体", status: "ENABLED", employeeCount: 68, updatedAt: "2026-08-03 14:10", updatedBy: "王财务", sortNo: 30 },
+  { id: 1, code: "HZ", name: "杭州主体", status: "ENABLED", employeeCount: 186, boundTitleId: 1, boundTitleName: "杭州赛宝卓越技术有限公司", updatedAt: "2026-08-07 15:46", updatedBy: "王财务", sortNo: 10 },
+  { id: 2, code: "BJ", name: "北京主体", status: "ENABLED", employeeCount: 92, boundTitleId: 2, boundTitleName: "北京示例技术服务有限公司", updatedAt: "2026-08-06 10:22", updatedBy: "李会计", sortNo: 20 },
+  { id: 3, code: "SH", name: "上海主体", status: "ENABLED", employeeCount: 68, boundTitleId: 3, boundTitleName: "上海赛宝技术服务有限公司", updatedAt: "2026-08-03 14:10", updatedBy: "王财务", sortNo: 30 },
   { id: 4, code: "EAST", name: "华东主体", status: "ENABLED", employeeCount: 40, updatedAt: "2026-07-29 09:35", updatedBy: "王财务", sortNo: 40 },
 ]);
 
@@ -291,6 +293,10 @@ const subjectDialogVisible = ref(false);
 const editingSubjectId = ref<number | null>(null);
 const subjectTotal = ref(subjects.value.length);
 const subjectSaving = ref(false);
+const titleBindingVisible = ref(false);
+const titleBindingSaving = ref(false);
+const bindingSubject = ref<InvoiceSubject | null>(null);
+const bindingTitleId = ref<number | null>(null);
 const permissionPageNum = ref(1);
 const permissionPageSize = ref(20);
 const permissionSubject = ref("");
@@ -413,6 +419,8 @@ function toSubject(record: any): InvoiceSubject {
     name: record.subjectName,
     status: record.status,
     employeeCount: record.employeeCount ?? 0,
+    boundTitleId: record.boundTitleId ?? null,
+    boundTitleName: record.boundTitleName ?? null,
     updatedAt: String(record.updatedAt ?? "").replace("T", " ").slice(0, 16),
     updatedBy: record.updatedBy ?? "-",
     sortNo: record.sortNo ?? 0,
@@ -795,6 +803,53 @@ async function changeSubjectStatus(subject: InvoiceSubject) {
   }
 }
 
+function openTitleBinding(subject: InvoiceSubject) {
+  bindingSubject.value = subject;
+  bindingTitleId.value = subject.boundTitleId ?? null;
+  titleBindingVisible.value = true;
+}
+
+async function saveTitleBinding() {
+  if (!bindingSubject.value || bindingTitleId.value == null) {
+    ElMessage.warning("请选择要绑定的发票抬头");
+    return;
+  }
+  titleBindingSaving.value = true;
+  try {
+    const response = await fetch(`/api/admin/subjects/${bindingSubject.value.id}/title-binding`, {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        titleId: bindingTitleId.value,
+        operatorUserId: currentUser.value?.username ?? "finance",
+      }),
+    });
+    if (!response.ok) await readApi(response, "绑定抬头失败");
+    const selectedTitle = titles.value.find((title) => title.id === bindingTitleId.value);
+    bindingSubject.value.boundTitleId = bindingTitleId.value;
+    bindingSubject.value.boundTitleName = selectedTitle?.companyName ?? null;
+    titleBindingVisible.value = false;
+    ElMessage.success("抬头绑定成功");
+    if (!testMode) await Promise.all([loadSubjects(), loadTitles()]);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "绑定抬头失败");
+  } finally {
+    titleBindingSaving.value = false;
+  }
+}
+
+function searchDirectory() {
+  directoryPageNum.value = 1;
+  void loadDirectory();
+}
+
+function resetDirectorySearch() {
+  directoryKeyword.value = "";
+  directoryPageNum.value = 1;
+  void loadDirectory();
+}
+
 async function initializePermissionProfiles() {
   if (testMode) return;
   const pageSize = 100;
@@ -1099,16 +1154,17 @@ async function applyPermissionSelection() {
           <header class="card-header"><div><h2>主体列表</h2><p>停用主体后，对应抬头及二维码将立即停止展示</p></div><span>共 {{ currentSubjectTotal }} 条</span></header>
           <div class="table-scroll">
             <table>
-              <thead><tr><th>主体名称</th><th>覆盖员工</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+              <thead><tr><th>主体名称</th><th>绑定抬头</th><th>覆盖员工</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
               <tbody>
                 <tr v-for="subject in filteredSubjects" :key="subject.id">
                   <td><strong>{{ subject.name }}</strong></td>
+                  <td>{{ subject.boundTitleName || '未绑定' }}</td>
                   <td>{{ subject.employeeCount }} 人</td>
                   <td><span class="status" :class="subject.status === 'ENABLED' ? 'status-published' : 'status-disabled'"><i />{{ subject.status === 'ENABLED' ? '启用' : '停用' }}</span></td>
                   <td>{{ subject.updatedAt }}<small>{{ subject.updatedBy }}</small></td>
-                  <td class="row-actions"><el-button link type="primary" @click="openSubjectEditor(subject)">编辑</el-button><el-button link type="primary" @click="changeSubjectStatus(subject)">{{ subject.status === 'ENABLED' ? '停用' : '启用' }}</el-button></td>
+                  <td class="row-actions"><el-button link type="primary" @click="openTitleBinding(subject)">绑定抬头</el-button><el-button link type="primary" @click="openSubjectEditor(subject)">编辑</el-button><el-button link type="primary" @click="changeSubjectStatus(subject)">{{ subject.status === 'ENABLED' ? '停用' : '启用' }}</el-button></td>
                 </tr>
-                <tr v-if="filteredSubjects.length === 0"><td class="empty-row" colspan="5">未找到符合条件的主体</td></tr>
+                <tr v-if="filteredSubjects.length === 0"><td class="empty-row" colspan="6">未找到符合条件的主体</td></tr>
               </tbody>
             </table>
           </div>
@@ -1311,7 +1367,11 @@ async function applyPermissionSelection() {
       <section class="directory-picker">
         <header>
           <div><strong>{{ permissionForm.subjectName }}</strong><p>{{ permissionForm.targetType === 'USER' ? '开关展示最终权限，个人设置优先于部门授权' : '从通讯录部门中选择，无需手工填写部门 ID' }}</p></div>
-          <el-input v-model="directoryKeyword" clearable :placeholder="permissionForm.targetType === 'USER' ? '搜索姓名、工号、部门或手机号' : '搜索部门名称'" :prefix-icon="Search" @keyup.enter="directoryPageNum = 1; loadDirectory()" />
+          <div class="directory-search-actions">
+            <el-input v-model="directoryKeyword" clearable :placeholder="permissionForm.targetType === 'USER' ? '搜索姓名、工号、部门或手机号' : '搜索部门名称'" :prefix-icon="Search" @keyup.enter="searchDirectory" />
+            <el-button type="primary" :icon="Search" @click="searchDirectory">搜索</el-button>
+            <el-button @click="resetDirectorySearch">重置</el-button>
+          </div>
         </header>
         <div v-if="permissionForm.targetType === 'USER'" class="directory-status-filter">
           <span>权限状态</span>
@@ -1344,6 +1404,18 @@ async function applyPermissionSelection() {
         <el-pagination v-model:current-page="directoryPageNum" v-model:page-size="directoryPageSize" :total="directoryTotal" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadDirectory" @size-change="directoryPageNum = 1; loadDirectory()" />
       </section>
       <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" @click="applyPermissionSelection">确定选择</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="titleBindingVisible" :title="bindingSubject ? `为${bindingSubject.name}绑定抬头` : '绑定抬头'" width="560px">
+      <el-alert title="一个主体只能绑定一个抬头，再次绑定将替换原关系。" type="info" :closable="false" />
+      <el-form label-position="top" class="binding-form">
+        <el-form-item label="发票抬头" required>
+          <el-select v-model="bindingTitleId" filterable placeholder="搜索并选择抬头公司名称" style="width: 100%">
+            <el-option v-for="title in titles.filter((item) => item.status !== 'DISABLED')" :key="title.id" :label="`${title.companyName}（${title.status === 'PUBLISHED' ? '已发布' : '草稿'}）`" :value="title.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer><el-button @click="titleBindingVisible = false">取消</el-button><el-button type="primary" :loading="titleBindingSaving" @click="saveTitleBinding">确认绑定</el-button></template>
     </el-dialog>
 
     <ChangePasswordDialog v-model="changePasswordVisible" />
