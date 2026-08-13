@@ -41,12 +41,7 @@ nav button.active { border-left-color: var(--blue); color: #fff; background: #17
 .toolbar-row .el-input { width: 365px; }
 .toolbar-row .el-input__wrapper, .toolbar-row .el-button { min-height: 46px; }
 .toolbar-spacer { flex: 1; }
-.summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 22px 0 18px; }
-.summary-grid article { display: flex; min-height: 84px; align-items: center; justify-content: space-between; padding: 18px 22px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
-.summary-grid span { display: grid; gap: 7px; color: #58657a; font-size: 14px; }
-.summary-grid small { color: #9aa5b5; font-size: 12px; }
-.summary-grid strong { font-size: 30px; }
-.status-tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+.status-tabs { display: flex; gap: 4px; margin: 22px 0 14px; }
 .status-tabs button { display: inline-flex; min-height: 38px; align-items: center; gap: 7px; padding: 0 13px; border: 0; border-radius: 7px; color: #68758a; background: transparent; cursor: pointer; }
 .status-tabs button:hover { background: #eaf2ff; }
 .status-tabs button.active { color: var(--blue); background: #eaf2ff; font-weight: 650; }

@@ -1,39 +1,42 @@
-# Design QA
+**对比目标**
 
-## Evidence
+- 源视觉：`C:\Users\admin\AppData\Local\Temp\codex-clipboard-7797beba-8be6-47a1-bb86-5a361ce96002.png`
+- 实现截图：`D:\IdeaProject\invoice-title\invoice-title\.runtime\deploy\title-cards-removed-implementation.png`
+- 视口：1280 × 720 CSS px，设备像素比 1
+- 状态：财务端测试数据模式，抬头管理首页
+- 源图尺寸：2048 × 987 px；实现截图尺寸：1265 × 748 px。源图只用于确认红框删除范围，未按像素缩放复刻整个历史页面。
 
-- Source visual truth:
-  - `C:\Users\admin\AppData\Local\Temp\codex-clipboard-baa965c8-954d-4c59-af01-ee83e16cde2d.png`（浏览器图标）
-  - `C:\Users\admin\AppData\Local\Temp\codex-clipboard-6836df07-f1ea-4903-95d2-7d0ef31ff60f.png`（主体统计卡与角色文案）
-  - `C:\Users\admin\AppData\Local\Temp\codex-clipboard-8c8c6bbf-bb8f-4081-b27f-aba122a93eb2.png`（操作日志展示）
-  - `C:\Users\admin\AppData\Local\Temp\codex-clipboard-921fa032-5ded-4d05-8dc4-1a4562aa31b1.png`（查看版本入口）
-- Implementation screenshot: `D:\IdeaProject\invoice-title\invoice-title\design-qa-finance-admin.png`
-- Browser state: finance-admin test mode, authenticated administrator, invoice-title list page.
-- Density normalization: source #2 is 3840x1822 pixels; implementation is 2048x972 pixels. Both use the same 2.107:1 aspect ratio; comparisons were made in normalized layout coordinates.
+**完整页面对比**
 
-## Verification
+- 红框中的“已发布”和“草稿”统计卡片已全部移除。
+- 搜索、筛选、批量导入、新增抬头、状态筛选和抬头列表均保留，页面信息层级连续。
+- 页面控制台无错误或警告。
 
-- Full-view comparison: the invoice-title page keeps the existing layout while the subject summary card, operation-log navigation, role subtitle, and version links are absent.
-- Focused DOM checks:
-  - favicon href is `/invoice-title-finance-icon-v1.svg` locally and `/invoice/finance/invoice-title-finance-icon-v1.svg` in the production build;
-  - summary card count is 2 and `已维护展示范围` is absent;
-  - `.finance-profile small` count is 0;
-  - `操作日志`, `查看版本`, and `预览` are absent;
-  - row actions contain only `编辑`.
-- Interaction checks: `主体管理`、`主体权限`、`抬头管理` navigation transitions all completed successfully.
-- Browser console: no error or warning entries; only Vite connection debug messages.
-- Regression checks: finance-admin Vitest suite and production Vite build passed.
+**局部区域对比**
 
-## Findings
+- 重点核对工具栏下方区域：页面不存在 `[aria-label="抬头数据概览"]`，仅保留一组 `[aria-label="抬头状态筛选"]`。
+- 状态筛选仍包含“全部、已发布、草稿、已停用”及数量，没有误删列表筛选能力。
 
-- P0: none.
-- P1: none.
-- P2: none.
-- P3: none.
+**五项视觉检查**
 
-## Comparison History
+- 字体与层级：沿用现有财务端字体、字号与字重，没有新增字体漂移。
+- 间距与布局：删除卡片后为状态筛选保留 22px 顶部间距，工具栏与列表间距自然。
+- 颜色与设计变量：沿用现有主题变量，无新增颜色。
+- 图片与资源：本次区域没有图片资源，现有品牌图标未改动。
+- 文案与内容：只删除卡片内“已发布/全部有效”和“草稿/待财务复核”；状态筛选与业务列表文案保留。
 
-- Initial source screenshots contained the four separately marked items.
-- First post-fix capture confirms all four requested removals without changing the unrelated page structure.
+**发现**
+
+- 未发现 P0/P1/P2 视觉或功能问题。
+
+**比较历史**
+
+- 首次实现即满足本次明确删除范围，无需视觉修复迭代。
+
+**交互检查**
+
+- 抬头状态筛选存在且可见。
+- 抬头列表与分页存在且可见。
+- 控制台错误与警告：0。
 
 final result: passed

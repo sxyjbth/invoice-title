@@ -49,12 +49,11 @@ describe("财务端发票抬头管理", () => {
     expect(profile.find("small").exists()).toBe(false);
   });
 
-  it("抬头概览只展示已发布和草稿，不展示主体统计卡片", () => {
+  it("抬头管理不展示统计卡片，只保留状态筛选", () => {
     const wrapper = mount(AdminApp, { global });
-    const summary = wrapper.get('[aria-label="抬头数据概览"]');
 
-    expect(summary.findAll("article")).toHaveLength(2);
-    expect(summary.text()).not.toContain("已维护展示范围");
+    expect(wrapper.find('[aria-label="抬头数据概览"]').exists()).toBe(false);
+    expect(wrapper.get('[aria-label="抬头状态筛选"]').text()).toContain("全部");
   });
 
   it("批量导入只作为抬头管理页面操作而不是一级导航", () => {

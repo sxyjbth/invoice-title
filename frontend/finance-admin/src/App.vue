@@ -1034,11 +1034,6 @@ async function applyPermissionSelection() {
           </el-button>
         </section>
 
-        <section class="summary-grid" aria-label="抬头数据概览">
-          <article><span>已发布<small>全部有效</small></span><strong>{{ statusCounts.PUBLISHED }}</strong></article>
-          <article><span>草稿<small>待财务复核</small></span><strong>{{ statusCounts.DRAFT }}</strong></article>
-        </section>
-
         <section class="status-tabs" aria-label="抬头状态筛选">
           <button
             v-for="option in statusOptions"
