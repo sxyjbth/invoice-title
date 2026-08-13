@@ -235,6 +235,12 @@ describe("财务端发票抬头管理", () => {
     expect(permissionPage.text()).toContain("当前可见 46 人");
   });
 
+  it("进入主体权限页面时加载所有主体的真实可见人数", () => {
+    expect(adminSource).toMatch(
+      /await Promise\.all\(permissionProfiles\.value\.map\(\(profile\) => loadPermissionProfile\(profile\.id\)\)\)/,
+    );
+  });
+
   it("没有主体时主体权限页面显示引导而不是白屏", async () => {
     const wrapper = mount(AdminApp, { global });
     await wrapper.findAll("nav button").find((item) => item.text().includes("主体权限"))!.trigger("click");

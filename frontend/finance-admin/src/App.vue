@@ -821,7 +821,7 @@ async function initializePermissionProfiles() {
   }));
   if (permissionProfiles.value.length > 0) {
     selectedPermissionProfileId.value = permissionProfiles.value[0].id;
-    await loadPermissionProfile(selectedPermissionProfileId.value);
+    await Promise.all(permissionProfiles.value.map((profile) => loadPermissionProfile(profile.id)));
   } else {
     selectedPermissionProfileId.value = 0;
   }
