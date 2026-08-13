@@ -13,6 +13,13 @@ type InvoiceTitle = {
   bankName: string;
   bankAccount: string;
   subjectNames: string[];
+  updatedBy: string;
+  updatedAt: string;
+};
+
+type InvoiceTitleSnapshot = Omit<InvoiceTitle, "subjectNames" | "updatedBy" | "updatedAt"> & {
+  createdBy: string;
+  createdAt: string;
 };
 
 type PageResult<T> = { records: T[]; total: number; pageNum: number; pageSize: number };
@@ -36,6 +43,14 @@ const subjects = computed(() => Array.from(new Set(titles.value.flatMap((title) 
 const currentTitle = computed(() => titles.value.find((title) => title.subjectNames?.includes(selectedSubject.value)) || titles.value[0]);
 const companyName = computed(() => currentTitle.value?.companyName || "");
 const taxpayerId = computed(() => currentTitle.value?.taxpayerId || "");
+const publishDescription = computed(() => {
+  if (!currentTitle.value) return "";
+  const publisher = currentTitle.value.updatedBy?.trim() || "财务";
+  const updatedTime = formatDateTime(currentTitle.value.updatedAt);
+  return updatedTime
+    ? `由${publisher}发布 · 当前有效 · ${updatedTime}更新`
+    : `由${publisher}发布 · 当前有效`;
+});
 const fields = computed<InvoiceField[]>(() => currentTitle.value ? [
   { label: "纳税人识别号", value: currentTitle.value.taxpayerId },
   { label: "地址", value: currentTitle.value.registeredAddress },
@@ -43,6 +58,11 @@ const fields = computed<InvoiceField[]>(() => currentTitle.value ? [
   { label: "开户行", value: currentTitle.value.bankName },
   { label: "银行账号", value: currentTitle.value.bankAccount },
 ] : []);
+
+/** LocalDateTime 由后端按 ISO 格式返回，直接截取到分钟，避免浏览器时区二次换算。 */
+function formatDateTime(value?: string) {
+  return value ? value.replace("T", " ").slice(0, 16) : "";
+}
 
 const formattedTime = computed(() => {
   const minutes = Math.floor(seconds.value / 60).toString().padStart(2, "0");
@@ -82,8 +102,13 @@ async function initialize() {
   try {
     const qrToken = new URLSearchParams(window.location.search).get("qrToken");
     if (qrToken) {
-      const snapshot = await api<Omit<InvoiceTitle, "subjectNames">>(`/api/employee/invoice-titles/qr/${encodeURIComponent(qrToken)}`);
-      titles.value = [{ ...snapshot, subjectNames: ["二维码抬头"] }];
+      const snapshot = await api<InvoiceTitleSnapshot>(`/api/employee/invoice-titles/qr/${encodeURIComponent(qrToken)}`);
+      titles.value = [{
+        ...snapshot,
+        subjectNames: ["二维码抬头"],
+        updatedBy: snapshot.createdBy,
+        updatedAt: snapshot.createdAt,
+      }];
     } else {
       const organization = await resolveDingTalkOrganization();
       const authCode = await requestDingTalkAuthCode(organization.corpId);
@@ -247,7 +272,7 @@ onBeforeUnmount(() => {
     <main v-else-if="currentTitle" class="title-content">
       <section class="company-intro">
         <h1>{{ companyName }}</h1>
-        <p>已由财务发布 · 当前有效</p>
+        <p>{{ publishDescription }}</p>
       </section>
 
       <section class="title-fields" aria-label="发票抬头信息">

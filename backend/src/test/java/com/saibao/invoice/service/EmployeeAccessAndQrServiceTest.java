@@ -42,6 +42,29 @@ class EmployeeAccessAndQrServiceTest {
     }
 
     @Test
+    void employeeTitleShouldExposePublisherDisplayNameAndActualUpdateTime() {
+        jdbcTemplate.update("""
+                INSERT INTO finance_user
+                (username, display_name, password_hash, role_type, status, created_by, created_at, updated_by, updated_at, deleted)
+                VALUES ('publisher-user', '王财务', 'not-used', 'FINANCE', 'ENABLED', 0,
+                        '2026-08-01 09:00:00', 0, '2026-08-01 09:00:00', 0)
+                """);
+        jdbcTemplate.update("""
+                UPDATE invoice_title
+                SET updated_by = 'publisher-user', updated_at = '2026-08-12 16:30:45'
+                WHERE id = 1
+                """);
+        sqlSession.clearCache();
+
+        InvoiceTitleVO title = employeeInvoiceTitleService
+                .pageAuthorized(new EmployeeInvoiceTitlePageQueryDTO(), 1L)
+                .getRecords().get(0);
+
+        assertThat(title.getUpdatedBy()).isEqualTo("王财务");
+        assertThat(title.getUpdatedAt()).isEqualTo(LocalDateTime.of(2026, 8, 12, 16, 30, 45));
+    }
+
+    @Test
     void qrTokenShouldExpireInTenMinutesAndBecomeInvalidImmediatelyAfterDisable() {
         LocalDateTime beforeCreate = LocalDateTime.now();
         QrTokenVO token = qrTokenService.create(1L, 1L);
@@ -54,6 +77,28 @@ class EmployeeAccessAndQrServiceTest {
         assertThatThrownBy(() -> qrTokenService.resolve(token.getToken()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("失效");
+    }
+
+    @Test
+    void qrSnapshotShouldExposePublisherDisplayNameAndPublishedVersionTime() {
+        jdbcTemplate.update("""
+                INSERT INTO finance_user
+                (username, display_name, password_hash, role_type, status, created_by, created_at, updated_by, updated_at, deleted)
+                VALUES ('qr-publisher', '李会计', 'not-used', 'FINANCE', 'ENABLED', 0,
+                        '2026-08-01 09:00:00', 0, '2026-08-01 09:00:00', 0)
+                """);
+        jdbcTemplate.update("""
+                UPDATE invoice_title_version
+                SET created_by = 'qr-publisher', created_at = '2026-08-12 17:05:30'
+                WHERE id = 3
+                """);
+        sqlSession.clearCache();
+
+        QrTokenVO token = qrTokenService.create(1L, 1L);
+        var snapshot = qrTokenService.resolve(token.getToken());
+
+        assertThat(snapshot.getCreatedBy()).isEqualTo("李会计");
+        assertThat(snapshot.getCreatedAt()).isEqualTo(LocalDateTime.of(2026, 8, 12, 17, 5, 30));
     }
 
     @Test

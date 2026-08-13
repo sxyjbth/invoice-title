@@ -2,17 +2,26 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.saibao.invoice.mapper.InvoiceTitleVersionMapper">
     <select id="selectById" resultType="com.saibao.invoice.domain.InvoiceTitleVersion">
-        SELECT id, title_id, version_no, status, change_type, change_summary, company_name, taxpayer_id, registered_address,
-               phone, bank_name, bank_account, subject_ids_json, created_by, created_at
-        FROM invoice_title_version WHERE id = #{id}
+        SELECT v.id, v.title_id, v.version_no, v.status, v.change_type, v.change_summary,
+               v.company_name, v.taxpayer_id, v.registered_address, v.phone, v.bank_name,
+               v.bank_account, v.subject_ids_json,
+               COALESCE(NULLIF(publisher.display_name, ''), v.created_by) AS created_by, v.created_at
+        FROM invoice_title_version v
+        LEFT JOIN finance_user publisher
+          ON LOWER(publisher.username) = LOWER(v.created_by) AND publisher.deleted = 0
+        WHERE v.id = #{id}
     </select>
 
     <select id="selectCurrentPublished" resultType="com.saibao.invoice.domain.InvoiceTitleVersion">
-        SELECT id, title_id, version_no, status, change_type, change_summary, company_name, taxpayer_id, registered_address,
-               phone, bank_name, bank_account, subject_ids_json, created_by, created_at
-        FROM invoice_title_version
-        WHERE title_id = #{titleId} AND status = 'PUBLISHED'
-        ORDER BY version_no DESC, id DESC LIMIT 1
+        SELECT v.id, v.title_id, v.version_no, v.status, v.change_type, v.change_summary,
+               v.company_name, v.taxpayer_id, v.registered_address, v.phone, v.bank_name,
+               v.bank_account, v.subject_ids_json,
+               COALESCE(NULLIF(publisher.display_name, ''), v.created_by) AS created_by, v.created_at
+        FROM invoice_title_version v
+        LEFT JOIN finance_user publisher
+          ON LOWER(publisher.username) = LOWER(v.created_by) AND publisher.deleted = 0
+        WHERE v.title_id = #{titleId} AND v.status = 'PUBLISHED'
+        ORDER BY v.version_no DESC, v.id DESC LIMIT 1
     </select>
 
     <select id="selectNextVersionNo" resultType="int">
@@ -34,11 +43,15 @@
     </select>
 
     <select id="selectPageByTitleId" resultType="com.saibao.invoice.domain.InvoiceTitleVersion">
-        SELECT id, title_id, version_no, status, change_type, change_summary, company_name, taxpayer_id,
-               registered_address, phone, bank_name, bank_account, subject_ids_json, created_by, created_at
-        FROM invoice_title_version
-        WHERE title_id = #{titleId}
-        ORDER BY version_no DESC, id DESC
+        SELECT v.id, v.title_id, v.version_no, v.status, v.change_type, v.change_summary,
+               v.company_name, v.taxpayer_id, v.registered_address, v.phone, v.bank_name,
+               v.bank_account, v.subject_ids_json,
+               COALESCE(NULLIF(publisher.display_name, ''), v.created_by) AS created_by, v.created_at
+        FROM invoice_title_version v
+        LEFT JOIN finance_user publisher
+          ON LOWER(publisher.username) = LOWER(v.created_by) AND publisher.deleted = 0
+        WHERE v.title_id = #{titleId}
+        ORDER BY v.version_no DESC, v.id DESC
         LIMIT #{pageSize} OFFSET #{offset}
     </select>
 </mapper>

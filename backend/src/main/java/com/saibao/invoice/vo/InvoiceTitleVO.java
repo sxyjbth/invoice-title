@@ -41,9 +41,9 @@ public class InvoiceTitleVO {
     @Schema(description = "展示主体 ID 列表，用于财务端编辑回显")
     private List<Long> subjectIds;
 
-    @Schema(description = "更新时间")
+    @Schema(description = "员工端展示的抬头最后发布时间；格式为 ISO 本地日期时间")
     private LocalDateTime updatedAt;
 
-    @Schema(description = "更新人姓名")
+    @Schema(description = "员工端展示的真实发布人姓名；账号无法解析时返回原操作人标识")
     private String updatedBy;
 }

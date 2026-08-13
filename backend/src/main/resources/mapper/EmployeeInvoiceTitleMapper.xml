@@ -64,11 +64,14 @@
 
     <select id="selectAuthorizedPage" resultType="com.saibao.invoice.domain.InvoiceTitle">
         SELECT DISTINCT t.id, t.company_name, t.taxpayer_id, t.registered_address, t.phone,
-               t.bank_name, t.bank_account, t.status, t.subject_names, t.updated_at, t.updated_by
+               t.bank_name, t.bank_account, t.status, t.subject_names, t.updated_at,
+               COALESCE(NULLIF(publisher.display_name, ''), t.updated_by) AS updated_by
         FROM invoice_title t
         INNER JOIN invoice_title_subject its ON its.title_id = t.id
         INNER JOIN invoice_subject s ON s.id = its.subject_id AND s.status = 'ENABLED' AND s.deleted = 0
         INNER JOIN ding_employee current_employee ON current_employee.id = #{employeeId}
+        LEFT JOIN finance_user publisher
+          ON LOWER(publisher.username) = LOWER(t.updated_by) AND publisher.deleted = 0
         <include refid="authorizedConditions"/>
         ORDER BY t.updated_at DESC, t.id DESC
         LIMIT #{query.pageSize} OFFSET #{query.offset}

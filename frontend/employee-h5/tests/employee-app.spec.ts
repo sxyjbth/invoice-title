@@ -55,6 +55,8 @@ describe("员工端发票抬头", () => {
           bankName: "宁波银行股份有限公司北京丰台支行",
           bankAccount: "86041110000957180",
           subjectNames: ["杭州主体"],
+          updatedBy: "王财务",
+          updatedAt: "2026-08-12T16:30:45",
         }], total: 1, pageNum: 1, pageSize: 20 }), { status: 200 });
       }
       throw new Error(`unexpected request: ${url}`);
@@ -84,6 +86,15 @@ describe("员工端发票抬头", () => {
     expect(request.mock.calls.some(([url]) => String(url).includes("dingUserId="))).toBe(false);
     expect((window as any).dd.runtime.permission.requestAuthCode)
       .toHaveBeenCalledWith(expect.objectContaining({ corpId: "ding-sebo" }));
+  });
+
+  it("展示真实发布人和抬头更新时间", async () => {
+    mockEmployeeApis();
+    const wrapper = mount(EmployeeApp, { global });
+    await flushPromises();
+
+    expect(wrapper.get(".company-intro p").text())
+      .toBe("由王财务发布 · 当前有效 · 2026-08-12 16:30更新");
   });
 
   it("与 sebo-meal 一致在钉钉容器没有全局 API 时使用完整 npm SDK", async () => {
@@ -168,12 +179,16 @@ describe("员工端发票抬头", () => {
       phone: "4008696096",
       bankName: "宁波银行股份有限公司北京丰台支行",
       bankAccount: "86041110000957180",
+      createdBy: "王财务",
+      createdAt: "2026-08-12T16:30:45",
     }), { status: 200 }));
 
     const wrapper = mount(EmployeeApp, { global });
     await flushPromises();
 
     expect(wrapper.text()).toContain("杭州赛宝卓越技术有限公司");
+    expect(wrapper.get(".company-intro p").text())
+      .toBe("由王财务发布 · 当前有效 · 2026-08-12 16:30更新");
     expect(request).toHaveBeenCalledWith("/api/employee/invoice-titles/qr/public-token", expect.any(Object));
     expect(request.mock.calls.some(([url]) => String(url).includes("/api/employee/auth/dingtalk"))).toBe(false);
     expect(wrapper.find(".employee-header").exists()).toBe(false);

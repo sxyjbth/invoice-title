@@ -40,9 +40,9 @@ public class InvoiceTitleVersionVO {
     @Schema(description = "银行账号快照")
     private String bankAccount;
 
-    @Schema(description = "创建人的钉钉用户 ID")
+    @Schema(description = "版本创建人姓名；财务账号无法解析时返回原操作人标识")
     private String createdBy;
 
-    @Schema(description = "版本创建时间")
+    @Schema(description = "版本创建时间；发布版本即实际发布时间")
     private LocalDateTime createdAt;
 }
