@@ -49,6 +49,14 @@ class DeploymentContractTest(unittest.TestCase):
         self.assertIn("--server.address=127.0.0.1", service)
         self.assertIn("--server.port=28082", service)
 
+    def test_backend_uses_an_invoice_specific_session_cookie(self):
+        config = (PROJECT_ROOT / "backend/src/main/resources/application.yml").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "name: ${INVOICE_SESSION_COOKIE_NAME:INVOICE_TITLE_SESSION}",
+            config,
+        )
+
     def test_nacos_service_is_private_and_has_memory_limits(self):
         service = (PROJECT_ROOT / "deploy/systemd/invoice-title-nacos.service").read_text(encoding="utf-8")
 

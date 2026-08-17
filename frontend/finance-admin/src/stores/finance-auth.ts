@@ -30,8 +30,8 @@ export const useFinanceAuthStore = defineStore("finance-auth", () => {
     checking.value = false;
   }
 
-  async function checkSession() {
-    if (sessionReady.value || testMode) return;
+  async function checkSession(force = false) {
+    if ((!force && sessionReady.value) || testMode) return;
     if (pendingCheck) return await pendingCheck;
 
     checking.value = true;

@@ -77,6 +77,24 @@ describe("finance admin router", () => {
     expect(router.currentRoute.value.name).toBe(routeNames.titles);
   });
 
+  it("revalidates the shared browser session before protected navigation", async () => {
+    const router = createFinanceRouter(createMemoryHistory());
+    const auth = {
+      sessionReady: true,
+      currentUser: { roleType: "SUPER_ADMIN" } as { roleType: string } | null,
+      checkSession: vi.fn(async (force?: boolean) => {
+        if (force) auth.currentUser = { roleType: "FINANCE" };
+      }),
+    };
+    installFinanceRouterGuards(router, auth);
+
+    await router.push("/accounts");
+    await router.isReady();
+
+    expect(auth.checkSession).toHaveBeenCalledWith(true);
+    expect(router.currentRoute.value.name).toBe(routeNames.titles);
+  });
+
   it("redirects unknown paths without forwarding catch-all params", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const router = createFinanceRouter(createMemoryHistory());

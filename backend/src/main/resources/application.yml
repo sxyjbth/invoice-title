@@ -4,6 +4,8 @@ server:
     session:
       timeout: 8h
       cookie:
+        # 同一 IP 还部署了其他系统，使用独立 Cookie 名称避免不同项目的 JSESSIONID 相互覆盖。
+        name: ${INVOICE_SESSION_COOKIE_NAME:INVOICE_TITLE_SESSION}
         http-only: true
         same-site: lax
         secure: ${INVOICE_SESSION_COOKIE_SECURE:false}

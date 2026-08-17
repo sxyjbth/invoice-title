@@ -47,12 +47,15 @@ export function createFinanceRouter(history: RouterHistory = createWebHistory(im
 export type FinanceRouterAuth = {
   sessionReady: boolean;
   currentUser: { roleType: string } | null;
-  checkSession: () => Promise<unknown>;
+  checkSession: (force?: boolean) => Promise<unknown>;
 };
 
 export function installFinanceRouterGuards(router: Router, auth: FinanceRouterAuth) {
   router.beforeEach(async (to) => {
-    if (!auth.sessionReady) await auth.checkSession();
+    // 浏览器标签页共享服务端会话。进入受保护页面前强制刷新当前账号，
+    // 避免另一个标签页登录后继续沿用旧角色，造成菜单与接口权限不一致。
+    if (to.meta.requiresAuth) await auth.checkSession(true);
+    else if (!auth.sessionReady) await auth.checkSession();
 
     if (to.meta.requiresAuth && !auth.currentUser) {
       return { name: routeNames.login, query: { redirect: to.fullPath } };
