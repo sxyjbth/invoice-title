@@ -1,17 +1,47 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
+import { createPinia } from "pinia";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
+import { createMemoryHistory } from "vue-router";
 import AdminApp from "../src/App.vue";
 import { elementPlusOptions } from "../src/element-plus";
+import FinanceLayout from "../src/layouts/FinanceLayout.vue";
+import { createFinanceRouter } from "../src/router";
 
 const adminStyles = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
 const adminIndex = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
-const adminSource = readFileSync(resolve(process.cwd(), "src/App.vue"), "utf8");
+const adminSource = [
+  "src/App.vue",
+  "src/layouts/FinanceLayout.vue",
+  "src/views/InvoiceTitlePage.vue",
+  "src/views/InvoiceSubjectPage.vue",
+  "src/views/SubjectPermissionPage.vue",
+  "src/views/FinanceAccountPage.vue",
+].map((path) => readFileSync(resolve(process.cwd(), path), "utf8")).join("\n");
 
-const global = { plugins: [[ElementPlus, elementPlusOptions]] } as any;
+async function mountAdmin(attachToBody = false) {
+  const router = createFinanceRouter(createMemoryHistory());
+  await router.push("/titles");
+  await router.isReady();
+  return mount(AdminApp, {
+    global: { plugins: [createPinia(), [ElementPlus, elementPlusOptions], router] },
+    attachTo: attachToBody ? document.body : undefined,
+  });
+}
+
+function layoutVm(wrapper: ReturnType<typeof mount>) {
+  return wrapper.getComponent(FinanceLayout).vm as any;
+}
+
+async function clickMenu(wrapper: ReturnType<typeof mount>, label: string) {
+  const item = wrapper.findAll("nav a").find((link) => link.text().includes(label));
+  if (!item) throw new Error(`未找到菜单：${label}`);
+  (item.element as HTMLAnchorElement).click();
+  await vi.waitFor(() => expect(wrapper.get("nav a.active").text()).toContain(label));
+}
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -29,42 +59,42 @@ describe("财务端发票抬头管理", () => {
     expect(adminStyles).toContain(".table-scroll table { width: 100%; min-width: 1030px;");
   });
 
-  it("页面标题区域不再展示钉钉工作台面包屑", () => {
-    const wrapper = mount(AdminApp, { global });
+  it("页面标题区域不再展示钉钉工作台面包屑", async () => {
+    const wrapper = await mountAdmin();
 
     expect(wrapper.get(".topbar").text()).not.toContain("钉钉工作台 / 财务管理");
   });
 
-  it("页面标题区域不再展示通讯录同步提示", () => {
-    const wrapper = mount(AdminApp, { global });
+  it("页面标题区域不再展示通讯录同步提示", async () => {
+    const wrapper = await mountAdmin();
 
     expect(wrapper.get(".topbar").text()).not.toContain("钉钉通讯录已同步");
   });
 
-  it("左下角只展示登录账号名称，不展示角色副标题", () => {
-    const wrapper = mount(AdminApp, { global });
+  it("左下角只展示登录账号名称，不展示角色副标题", async () => {
+    const wrapper = await mountAdmin();
     const profile = wrapper.get('[aria-label="当前登录账号"]');
 
     expect(profile.get("strong").text()).toBe("superadmin");
     expect(profile.find("small").exists()).toBe(false);
   });
 
-  it("抬头管理不展示统计卡片，只保留状态筛选", () => {
-    const wrapper = mount(AdminApp, { global });
+  it("抬头管理不展示统计卡片，只保留状态筛选", async () => {
+    const wrapper = await mountAdmin();
 
     expect(wrapper.find('[aria-label="抬头数据概览"]').exists()).toBe(false);
     expect(wrapper.get('[aria-label="抬头状态筛选"]').text()).toContain("全部");
   });
 
-  it("批量导入只作为抬头管理页面操作而不是一级导航", () => {
-    const wrapper = mount(AdminApp, { global });
+  it("批量导入只作为抬头管理页面操作而不是一级导航", async () => {
+    const wrapper = await mountAdmin();
 
     expect(wrapper.get("nav").text()).not.toContain("批量导入");
     expect(wrapper.get('[data-testid="batch-import"]').text()).toContain("批量导入");
   });
 
   it("提供全部、已发布、草稿和已停用状态筛选", async () => {
-    const wrapper = mount(AdminApp, { global });
+    const wrapper = await mountAdmin();
 
     const statusFilter = wrapper.get('[aria-label="抬头状态筛选"]');
     expect(statusFilter.text()).toContain("全部");
@@ -77,8 +107,8 @@ describe("财务端发票抬头管理", () => {
     expect(wrapper.get("tbody").text()).not.toContain("杭州赛宝卓越技术有限公司");
   });
 
-  it("分页组件使用中文文案", () => {
-    const wrapper = mount(AdminApp, { global });
+  it("分页组件使用中文文案", async () => {
+    const wrapper = await mountAdmin();
     const pagination = wrapper.get('[aria-label="抬头列表分页"]');
     expect(pagination.text()).toContain("共 3 条");
     expect(pagination.text()).toContain("前往");
@@ -88,7 +118,7 @@ describe("财务端发票抬头管理", () => {
 
   it("新增和编辑抬头打开真实表单并保存到后端", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("99", { status: 200 }));
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
+    const wrapper = await mountAdmin(true);
 
     await wrapper.findAll("button").find((item) => item.text().includes("新增抬头"))!.trigger("click");
     await nextTick();
@@ -115,7 +145,7 @@ describe("财务端发票抬头管理", () => {
 
   it("保存草稿允许不选择主体，发布时仍要求选择主体", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("99", { status: 200 }));
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
+    const wrapper = await mountAdmin(true);
     await wrapper.findAll("button").find((item) => item.text().includes("新增抬头"))!.trigger("click");
     await nextTick();
 
@@ -134,8 +164,8 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
-  it("抬头管理不展示版本查看或预览功能，版本仍由后端写入数据库", () => {
-    const wrapper = mount(AdminApp, { global });
+  it("抬头管理不展示版本查看或预览功能，版本仍由后端写入数据库", async () => {
+    const wrapper = await mountAdmin();
 
     expect(wrapper.get("tbody").text()).not.toContain("查看版本");
     expect(wrapper.get("tbody").text()).not.toContain("预览");
@@ -144,8 +174,8 @@ describe("财务端发票抬头管理", () => {
   });
 
   it("主体管理展示可维护的主体列表并使用分页", async () => {
-    const wrapper = mount(AdminApp, { global });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("主体管理"))!.trigger("click");
+    const wrapper = await mountAdmin();
+    await clickMenu(wrapper, "主体管理");
 
     expect(wrapper.get("tbody").text()).toContain("杭州主体");
     expect(wrapper.get("main").text()).not.toContain("主体编码");
@@ -157,15 +187,15 @@ describe("财务端发票抬头管理", () => {
 
   it("主体操作栏可打开抬头绑定窗口并将选择结果保存到后端", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 200 }));
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("主体管理"))!.trigger("click");
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体管理");
 
     await wrapper.findAll("tbody tr")[0].findAll("button")
       .find((item) => item.text().includes("绑定抬头"))!.trigger("click");
     await nextTick();
     expect(document.body.textContent).toContain("为杭州主体绑定抬头");
 
-    (wrapper.vm as any).bindingTitleId = 1;
+    layoutVm(wrapper).bindingTitleId = 1;
     await nextTick();
     Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
       .find((button) => button.textContent?.includes("确认绑定"))!.click();
@@ -180,8 +210,8 @@ describe("财务端发票抬头管理", () => {
 
   it("新增主体只填写名称且请求不再包含主体编码", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 200 }));
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("主体管理"))!.trigger("click");
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体管理");
     await wrapper.findAll("button").find((item) => item.text().includes("新增主体"))!.trigger("click");
     await nextTick();
 
@@ -202,8 +232,8 @@ describe("财务端发票抬头管理", () => {
   });
 
   it("主体列表可按启用或停用状态筛选", async () => {
-    const wrapper = mount(AdminApp, { global });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("主体管理"))!.trigger("click");
+    const wrapper = await mountAdmin();
+    await clickMenu(wrapper, "主体管理");
 
     const statusFilter = wrapper.get('[aria-label="主体状态筛选"]');
     expect(statusFilter.text()).toContain("全部");
@@ -216,8 +246,8 @@ describe("财务端发票抬头管理", () => {
 
   it("主体支持新增、编辑和停用操作", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 200 }));
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("主体管理"))!.trigger("click");
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体管理");
 
     await wrapper.findAll("button").find((item) => item.text().includes("新增主体"))!.trigger("click");
     await nextTick();
@@ -242,8 +272,8 @@ describe("财务端发票抬头管理", () => {
   });
 
   it("主体权限按主体聚合配置全员、部门和员工授权", async () => {
-    const wrapper = mount(AdminApp, { global });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("主体权限"))!.trigger("click");
+    const wrapper = await mountAdmin();
+    await clickMenu(wrapper, "主体权限");
 
     const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
     expect(permissionPage.text()).toContain("选择主体");
@@ -259,17 +289,17 @@ describe("财务端发票抬头管理", () => {
     expect(permissionPage.text()).toContain("当前可见 46 人");
   });
 
-  it("进入主体权限页面时加载所有主体的真实可见人数", () => {
+  it("进入主体权限页面时聚合加载所有主体的真实可见人数", () => {
     expect(adminSource).toMatch(
-      /await Promise\.all\(permissionProfiles\.value\.map\(\(profile\) => loadPermissionProfile\(profile\.id\)\)\)/,
+      /await loadPermissionProfiles\(permissionProfiles\.value\.map\(\(profile\) => profile\.id\), loadPermissionProfile\)/,
     );
   });
 
   it("没有主体时主体权限页面显示引导而不是白屏", async () => {
-    const wrapper = mount(AdminApp, { global });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("主体权限"))!.trigger("click");
+    const wrapper = await mountAdmin();
+    await clickMenu(wrapper, "主体权限");
 
-    (wrapper.vm as any).permissionProfiles = [];
+    layoutVm(wrapper).permissionProfiles = [];
     await nextTick();
 
     const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
@@ -291,8 +321,8 @@ describe("财务端发票抬头管理", () => {
       status: 200,
       headers: { "Content-Type": "application/json" },
     }));
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("主体权限"))!.trigger("click");
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
 
     const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
     await permissionPage.findAll("button").find((item) => item.text().includes("编辑") && item.element.closest(".permission-level-row")?.textContent?.includes("员工授权"))!.trigger("click");
@@ -334,8 +364,8 @@ describe("财务端发票抬头管理", () => {
       status: 200,
       headers: { "Content-Type": "application/json" },
     }));
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("主体权限"))!.trigger("click");
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
 
     const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
     await permissionPage.findAll("button").find((item) => item.text().includes("编辑") && item.element.closest(".permission-level-row")?.textContent?.includes("员工授权"))!.trigger("click");
@@ -372,15 +402,15 @@ describe("财务端发票抬头管理", () => {
       }
       return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
     });
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("主体权限"))!.trigger("click");
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
     const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
     await permissionPage.findAll("button").find((item) => item.text().includes("编辑") && item.element.closest(".permission-level-row")?.textContent?.includes("员工授权"))!.trigger("click");
     await flushPromises();
 
     (document.body.querySelector('[aria-label="第一页员工的查看权限"]') as HTMLElement).click();
-    (wrapper.vm as any).directoryPageNum = 2;
-    await (wrapper.vm as any).loadDirectory();
+    layoutVm(wrapper).directoryPageNum = 2;
+    await layoutVm(wrapper).loadDirectory();
     await flushPromises();
     Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
       .find((button) => button.textContent?.includes("确定选择"))!.click();
@@ -407,9 +437,9 @@ describe("财务端发票抬头管理", () => {
       status: 200,
       headers: { "Content-Type": "application/json" },
     }));
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
-    await wrapper.findAll("nav button").find((item) => item.text().includes("主体权限"))!.trigger("click");
-    (wrapper.vm as any).permissionProfiles[0].employeeRules = [{
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [{
       employeeId: 99,
       employeeName: "孙鑫尧",
       employeeNo: "R04952",
@@ -426,8 +456,8 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
-  it("财务端不展示操作日志入口和页面，日志仍由后端写入数据库", () => {
-    const wrapper = mount(AdminApp, { global });
+  it("财务端不展示操作日志入口和页面，日志仍由后端写入数据库", async () => {
+    const wrapper = await mountAdmin();
 
     expect(wrapper.get("nav").text()).not.toContain("操作日志");
     expect(adminSource).not.toContain("/api/admin/operation-logs");
@@ -435,8 +465,8 @@ describe("财务端发票抬头管理", () => {
   });
 
   it("财务账号接口返回 401 时退出失效会话并显示登录页", async () => {
-    const wrapper = mount(AdminApp, { global });
-    const handleFinanceAccountResponse = (wrapper.vm as any).handleFinanceAccountResponse;
+    const wrapper = await mountAdmin();
+    const handleFinanceAccountResponse = layoutVm(wrapper).handleFinanceAccountResponse;
 
     expect(handleFinanceAccountResponse).toBeTypeOf("function");
     if (!handleFinanceAccountResponse) return;
@@ -445,25 +475,21 @@ describe("财务端发票抬头管理", () => {
       status: 401,
       headers: { "Content-Type": "application/json" },
     }));
-    await nextTick();
-
-    expect(wrapper.find(".login-page").exists()).toBe(true);
+    await vi.waitFor(() => expect(wrapper.find(".login-page").exists()).toBe(true));
   });
 
   it("任一管理接口返回 401 时统一退出失效会话并显示登录页", async () => {
-    const wrapper = mount(AdminApp, { global });
+    const wrapper = await mountAdmin();
 
-    await expect((wrapper.vm as any).readApi(new Response('{"message":"请先登录财务管理端"}', {
+    await expect(layoutVm(wrapper).readApi(new Response('{"message":"请先登录财务管理端"}', {
       status: 401,
       headers: { "Content-Type": "application/json" },
     }), "抬头列表加载失败")).rejects.toThrow("请先登录财务管理端");
-    await nextTick();
-
-    expect(wrapper.find(".login-page").exists()).toBe(true);
+    await vi.waitFor(() => expect(wrapper.find(".login-page").exists()).toBe(true));
   });
 
   it("批量导入使用真实文件选择并为导入历史提供分页", async () => {
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
+    const wrapper = await mountAdmin(true);
     await wrapper.get('[data-testid="batch-import"]').trigger("click");
 
     expect(document.body.querySelector('input[type="file"][accept=".xlsx"]')).not.toBeNull();
@@ -476,12 +502,12 @@ describe("财务端发票抬头管理", () => {
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       id: 1, taskNo: "IMP-1", status: "COMPLETED", totalCount: 1, successCount: 1, failureCount: 0,
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
-    const wrapper = mount(AdminApp, { global });
-    (wrapper.vm as any).importFile = new File(["xlsx"], "titles.xlsx", {
+    const wrapper = await mountAdmin();
+    layoutVm(wrapper).importFile = new File(["xlsx"], "titles.xlsx", {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
 
-    await (wrapper.vm as any).submitImport();
+    await layoutVm(wrapper).submitImport();
 
     expect(request).toHaveBeenCalledWith("/api/admin/invoice-imports", expect.objectContaining({
       method: "POST",
@@ -522,12 +548,12 @@ describe("财务端发票抬头管理", () => {
         headers: { "Content-Type": "application/json" },
       });
     });
-    const wrapper = mount(AdminApp, { global, attachTo: document.body });
-    (wrapper.vm as any).importFile = new File(["xlsx"], "titles.xlsx", {
+    const wrapper = await mountAdmin(true);
+    layoutVm(wrapper).importFile = new File(["xlsx"], "titles.xlsx", {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
 
-    await (wrapper.vm as any).submitImport();
+    await layoutVm(wrapper).submitImport();
     await flushPromises();
 
     expect(request.mock.calls.some(([url]) => String(url).includes("taskId=9"))).toBe(true);

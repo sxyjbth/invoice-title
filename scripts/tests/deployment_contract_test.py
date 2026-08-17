@@ -27,7 +27,7 @@ class DeploymentContractTest(unittest.TestCase):
         employee_html = (PROJECT_ROOT / "frontend/employee-h5/index.html").read_text(encoding="utf-8")
         finance_html = (PROJECT_ROOT / "frontend/finance-admin/index.html").read_text(encoding="utf-8")
 
-        self.assertEqual(2, config.count("default_type text/html;"))
+        self.assertEqual(3, config.count("default_type text/html;"))
         self.assertIn("location = /invoice/employee/favicon.svg", config)
         self.assertIn("location = /invoice/finance/invoice-title-finance-icon-v1.svg", config)
         self.assertIn('rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg"', employee_html)
@@ -78,6 +78,24 @@ class DeploymentContractTest(unittest.TestCase):
 
         self.assertIn("VITE_PUBLIC_BASE", employee)
         self.assertIn("VITE_PUBLIC_BASE", finance)
+
+    def test_finance_admin_history_routes_fall_back_to_index_html(self):
+        config = (PROJECT_ROOT / "deploy/nginx/invoice-title.conf").read_text(encoding="utf-8")
+
+        self.assertIn("location ^~ /invoice/finance/ {", config)
+        self.assertIn(
+            "try_files $uri /invoice/finance/index.html;",
+            config,
+        )
+        self.assertIn(
+            "location = /invoice/finance/index.html {",
+            config,
+        )
+
+    def test_frontend_tests_run_sequentially_for_release_stability(self):
+        package = (PROJECT_ROOT / "package.json").read_text(encoding="utf-8")
+
+        self.assertIn("--workspace-concurrency=1", package)
 
     def test_server_build_creates_a_release_from_the_checked_out_commit(self):
         script = (PROJECT_ROOT / "deploy/server-build-release.sh").read_text(encoding="utf-8")
