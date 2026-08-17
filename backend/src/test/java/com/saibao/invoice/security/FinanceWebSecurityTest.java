@@ -33,6 +33,7 @@ class FinanceWebSecurityTest {
 
     @BeforeEach
     void seedAccounts() {
+        jdbcTemplate.update("DELETE FROM finance_session_token");
         jdbcTemplate.update("DELETE FROM finance_user");
         insertAccount(1L, "superadmin", "超级管理员", "Admin@123456", "SUPER_ADMIN");
         insertAccount(2L, "finance.user", "财务人员", "Finance@123", "FINANCE");
@@ -84,9 +85,53 @@ class FinanceWebSecurityTest {
                 .isEqualTo(200);
     }
 
+    @Test
+    void twoFinanceTabsMustKeepIndependentLoginsAndLogoutOnlyTheCurrentTab() throws Exception {
+        HttpClient sharedBrowser = sessionClient();
+        HttpResponse<String> financeLogin = post(sharedBrowser, "/api/auth/login",
+                "{\"username\":\"finance.user\",\"password\":\"Finance@123\"}");
+        HttpResponse<String> administratorLogin = post(sharedBrowser, "/api/auth/login",
+                "{\"username\":\"superadmin\",\"password\":\"Admin@123456\"}");
+
+        String financeToken = financeLogin.headers().firstValue("X-Invoice-Finance-Session").orElse("");
+        String administratorToken = administratorLogin.headers().firstValue("X-Invoice-Finance-Session").orElse("");
+        assertThat(financeToken).isNotBlank().isNotEqualTo(administratorToken);
+        assertThat(administratorToken).isNotBlank();
+        assertThat(getWithToken(sharedBrowser, "/api/auth/me", financeToken).body())
+                .contains("\"username\":\"finance.user\"");
+        assertThat(getWithToken(sharedBrowser, "/api/auth/me", administratorToken).body())
+                .contains("\"username\":\"superadmin\"");
+
+        assertThat(postWithToken(sharedBrowser, "/api/auth/logout", "", administratorToken).statusCode())
+                .isEqualTo(200);
+        assertThat(getWithToken(sharedBrowser, "/api/auth/me", administratorToken).statusCode())
+                .isEqualTo(401);
+        assertThat(getWithToken(sharedBrowser, "/api/auth/me", financeToken).statusCode())
+                .isEqualTo(200);
+    }
+
     private HttpClient sessionClient() {
         CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
         return HttpClient.newBuilder().cookieHandler(cookies).build();
+    }
+
+    private HttpResponse<String> getWithToken(HttpClient client, String path, String token) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(uri(path))
+                .header("X-Invoice-Finance-Session", token)
+                .GET()
+                .build();
+        return client.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postWithToken(HttpClient client, String path, String body, String token) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(uri(path))
+                .header("Content-Type", "application/json")
+                .header("X-Invoice-Finance-Session", token)
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        return client.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> get(HttpClient client, String path) throws Exception {

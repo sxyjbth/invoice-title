@@ -154,7 +154,7 @@ async function toggleStatus(account: FinanceAccount) {
           <template #default="{ row }"><div class="account-name"><span>{{ row.displayName.slice(0, 1) }}</span><div><strong>{{ row.displayName }}</strong><small>{{ row.username }}</small></div></div></template>
         </el-table-column>
         <el-table-column label="状态" width="120"><template #default="{ row }"><el-tag :type="row.status === 'ENABLED' ? 'success' : 'info'" effect="light">{{ row.status === "ENABLED" ? "已启用" : "已停用" }}</el-tag></template></el-table-column>
-        <el-table-column prop="lastLoginAt" label="最近登录" min-width="170"><template #default="{ row }">{{ row.lastLoginAt || "尚未登录" }}</template></el-table-column>
+        <el-table-column prop="lastLoginAt" label="最近登录" min-width="170"><template #default="{ row }">{{ row.lastLoginAt ? formatDateTime(row.lastLoginAt) : "尚未登录" }}</template></el-table-column>
         <el-table-column label="创建时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template></el-table-column>
         <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }"><el-button link type="primary" @click="openReset(row)">重置密码</el-button><el-button link :type="row.status === 'ENABLED' ? 'danger' : 'primary'" @click="toggleStatus(row)">{{ row.status === "ENABLED" ? "停用" : "启用" }}</el-button></template>
