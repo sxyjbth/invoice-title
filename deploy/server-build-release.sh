@@ -45,6 +45,49 @@ if [[ -e "${release_dir}" ]]; then
     exit 0
 fi
 
+# 已打开的浏览器页面仍可能在路由切换时请求旧版的 Vite 分块文件。
+# 新 release 保留最近两代的哈希资源，避免连续发版后这些请求瞬间变成 404。
+current_release="$(readlink -f -- "${APP_HOME}/current" 2>/dev/null || true)"
+previous_release=""
+if [[ -d "${APP_HOME}/releases" ]]; then
+    while IFS= read -r candidate_name; do
+        candidate_release="$(readlink -f -- "${APP_HOME}/releases/${candidate_name}")"
+        [[ "${candidate_release}" == "${current_release}" ]] && continue
+        previous_release="${candidate_release}"
+        break
+    done < <(find "${APP_HOME}/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n' | sort -r)
+fi
+
+copy_release_assets() {
+    local release_root="$1"
+    local app_name="$2"
+    local release_frontend="${release_root}/frontend/${app_name}"
+    local source_assets="${release_frontend}/assets"
+    local target_assets="${staging_dir}/frontend/${app_name}/assets"
+    local asset_manifest="${release_frontend}/.release-assets"
+
+    [[ -n "${release_root}" && -d "${source_assets}" ]] || return 0
+    mkdir -p "${target_assets}"
+
+    if [[ -f "${asset_manifest}" ]]; then
+        while IFS= read -r relative_path; do
+            [[ -n "${relative_path}" && "${relative_path}" != /* && "${relative_path}" != *..* ]] || continue
+            [[ -f "${source_assets}/${relative_path}" ]] || continue
+            mkdir -p "${target_assets}/$(dirname -- "${relative_path}")"
+            cp -a "${source_assets}/${relative_path}" "${target_assets}/${relative_path}"
+        done < "${asset_manifest}"
+    else
+        # 兼容首次启用资源清单前创建的 release。
+        cp -a "${source_assets}/." "${target_assets}/"
+    fi
+}
+
+copy_current_assets() {
+    local app_name="$1"
+    copy_release_assets "${previous_release}" "${app_name}"
+    copy_release_assets "${current_release}" "${app_name}"
+}
+
 rm -rf -- "${staging_dir}"
 mkdir -p "${staging_dir}/backend" \
     "${staging_dir}/frontend/employee-h5" \
@@ -69,8 +112,14 @@ mvn -f backend/pom.xml --batch-mode \
 
 install -m 0640 backend/target/invoice-title-service-0.1.0-SNAPSHOT.jar \
     "${staging_dir}/backend/invoice-title-service.jar"
+copy_current_assets employee-h5
+copy_current_assets finance-admin
 cp -a frontend/employee-h5/dist/. "${staging_dir}/frontend/employee-h5/"
 cp -a frontend/finance-admin/dist/. "${staging_dir}/frontend/finance-admin/"
+find frontend/employee-h5/dist/assets -type f -printf '%P\n' | sort \
+    > "${staging_dir}/frontend/employee-h5/.release-assets"
+find frontend/finance-admin/dist/assets -type f -printf '%P\n' | sort \
+    > "${staging_dir}/frontend/finance-admin/.release-assets"
 printf '%s\n' "${commit_id}" > "${staging_dir}/GIT_COMMIT"
 
 # Nginx 只需读取公开静态资源；后端 JAR 和 release 元数据继续保持私有权限。

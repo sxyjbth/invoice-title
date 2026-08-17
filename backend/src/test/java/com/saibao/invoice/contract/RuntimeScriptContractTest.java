@@ -57,6 +57,20 @@ class RuntimeScriptContractTest {
                 .contains("chown -R \"${APP_USER}:${APP_GROUP}\" \"${staging_dir}\"");
     }
 
+    @Test
+    void productionReleaseKeepsPriorHashedAssetsForAlreadyOpenBrowserTabs() throws IOException {
+        String buildRelease = readProjectFile("deploy", "server-build-release.sh");
+
+        assertThat(buildRelease)
+                .contains("copy_current_assets employee-h5")
+                .contains("copy_current_assets finance-admin")
+                .contains("previous_release=")
+                .contains("copy_release_assets \"${previous_release}\" \"${app_name}\"");
+        assertThat(buildRelease.indexOf("copy_current_assets finance-admin"))
+                .isLessThan(buildRelease.indexOf(
+                        "cp -a frontend/finance-admin/dist/. \"${staging_dir}/frontend/finance-admin/\""));
+    }
+
     private String readProjectFile(String... parts) throws IOException {
         Path backendRoot = Path.of("").toAbsolutePath();
         Path projectRoot = backendRoot.getParent();
