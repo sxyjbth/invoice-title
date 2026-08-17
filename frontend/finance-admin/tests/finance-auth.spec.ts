@@ -9,6 +9,30 @@ import { elementPlusOptions } from "../src/element-plus";
 
 const global = { plugins: [[ElementPlus, elementPlusOptions]] } as any;
 
+describe("finance login session", () => {
+  it("clicking login creates only one tab session so the issued token survives refresh", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      id: 1,
+      username: "admin",
+      displayName: "Administrator",
+      roleType: "SUPER_ADMIN",
+      status: "ENABLED",
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    const wrapper = mount(FinanceLoginView, { global });
+
+    await wrapper.get('input[autocomplete="username"]').setValue("admin");
+    await wrapper.get('input[autocomplete="current-password"]').setValue("root");
+    const form = wrapper.get("form");
+    await Promise.all([form.trigger("submit"), form.trigger("submit")]);
+    await flushPromises();
+
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+});
+
 afterEach(() => {
   document.body.innerHTML = "";
   vi.restoreAllMocks();

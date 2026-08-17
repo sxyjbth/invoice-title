@@ -46,6 +46,32 @@ describe("finance api prefix", () => {
     expect(new Headers(secondRequest.headers).get("X-Invoice-Finance-Session")).toBe("tab-one-token");
   });
 
+  it("keeps the current tab logged in when the page is refreshed", async () => {
+    const tabStorage = memoryStorage();
+    const loginFetch = vi.fn().mockResolvedValue(new Response("{}", {
+      status: 200,
+      headers: { "X-Invoice-Finance-Session": "refresh-safe-token" },
+    }));
+
+    await createApiFetch(loginFetch as typeof fetch, "/invoice/", tabStorage)(
+      "/api/auth/login",
+      { method: "POST" },
+    );
+
+    // 页面刷新会重新创建 API 请求函数，但同一标签页的 sessionStorage 会保留。
+    const refreshedNativeFetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    const refreshedFetch = createApiFetch(
+      refreshedNativeFetch as typeof fetch,
+      "/invoice/",
+      tabStorage,
+    );
+    await refreshedFetch("/api/auth/me");
+
+    const refreshedRequest = refreshedNativeFetch.mock.calls[0][1] as RequestInit;
+    expect(new Headers(refreshedRequest.headers).get("X-Invoice-Finance-Session"))
+      .toBe("refresh-safe-token");
+  });
+
   it("sends an empty tab-session header before login so another tab cookie is ignored", async () => {
     const storage = memoryStorage();
     const nativeFetch = vi.fn().mockResolvedValue(new Response("", { status: 401 }));

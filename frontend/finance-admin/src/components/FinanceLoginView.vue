@@ -16,6 +16,7 @@ const form = reactive({ username: "", password: "" });
 const submitting = ref(false);
 
 async function submitLogin() {
+  if (submitting.value) return;
   if (!form.username.trim() || !form.password) {
     ElMessage.warning("请输入登录账号和密码");
     return;
@@ -66,9 +67,9 @@ async function submitLogin() {
             <el-input v-model="form.username" size="large" placeholder="请输入登录账号" autocomplete="username" :prefix-icon="User" />
           </el-form-item>
           <el-form-item label="密码">
-            <el-input v-model="form.password" size="large" type="password" show-password placeholder="请输入密码" autocomplete="current-password" :prefix-icon="Lock" @keyup.enter="submitLogin" />
+            <el-input v-model="form.password" size="large" type="password" show-password placeholder="请输入密码" autocomplete="current-password" :prefix-icon="Lock" />
           </el-form-item>
-          <el-button class="login-button" type="primary" size="large" :loading="submitting" native-type="submit" @click="submitLogin">登录</el-button>
+          <el-button class="login-button" type="primary" size="large" :loading="submitting" native-type="submit">登录</el-button>
         </el-form>
 
         <p class="reset-tip">忘记密码请联系超级管理员重置</p>
