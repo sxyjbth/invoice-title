@@ -33,6 +33,13 @@ class DeploymentContractTest(unittest.TestCase):
         self.assertIn("pids_limit:", compose)
         self.assertIn("max-size: \"20m\"", compose)
 
+    def test_backend_image_verification_includes_project_level_contract_files(self):
+        dockerfile = (PROJECT_ROOT / "deploy/docker/backend.Dockerfile").read_text(encoding="utf-8")
+
+        verify_step = dockerfile.index("clean verify")
+        self.assertLess(dockerfile.index("COPY scripts scripts"), verify_step)
+        self.assertLess(dockerfile.index("COPY deploy deploy"), verify_step)
+
     def test_container_base_images_use_the_server_reachable_registry_mirror(self):
         backend = (PROJECT_ROOT / "deploy/docker/backend.Dockerfile").read_text(encoding="utf-8")
         web = (PROJECT_ROOT / "deploy/docker/web.Dockerfile").read_text(encoding="utf-8")

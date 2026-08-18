@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.jdbc.Sql;
 
 import java.util.List;
 
@@ -23,6 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 @SpringBootTest
 @Import(MultiOrganizationDirectorySyncTest.FakeConfiguration.class)
+@Sql(scripts = {"classpath:schema-test.sql", "classpath:data-test.sql"},
+        executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
 class MultiOrganizationDirectorySyncTest {
 
     @Autowired private IDingDirectorySyncService syncService;

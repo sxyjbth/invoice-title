@@ -8,6 +8,8 @@ RUN mvn --batch-mode -f backend/pom.xml \
     dependency:go-offline
 
 COPY backend/src backend/src
+COPY scripts scripts
+COPY deploy deploy
 RUN mvn --batch-mode -f backend/pom.xml \
     -s scripts/maven-settings.xml \
     clean verify
