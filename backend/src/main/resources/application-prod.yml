@@ -1,18 +1,4 @@
 spring:
-  config:
-    import: optional:nacos:invoice-title-service.yml
-  cloud:
-    discovery:
-      enabled: true
-    nacos:
-      server-addr: ${INVOICE_NACOS_SERVER_ADDR:127.0.0.1:28848}
-      config:
-        enabled: true
-        server-addr: ${INVOICE_NACOS_SERVER_ADDR:127.0.0.1:28848}
-      discovery:
-        enabled: true
-        server-addr: ${INVOICE_NACOS_SERVER_ADDR:127.0.0.1:28848}
   flyway:
     # 生产环境只执行正式结构迁移，禁止加载 db/local 演示数据。
     locations: classpath:db/migration
-

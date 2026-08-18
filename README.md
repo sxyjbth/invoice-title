@@ -1,6 +1,6 @@
 # 发票抬头维护与展示
 
-项目包含钉钉员工端、财务管理端和 Spring Boot 后端。所有本地运行依赖均安装在项目的 `.runtime` 目录，不修改系统 JDK、Node、Maven、Nacos、Redis 或 MySQL 配置。
+项目包含钉钉员工端、财务管理端和单体 Spring Boot 后端。应用固定复用已有 MySQL；项目专用的 JDK、Node 和 Maven 安装在 `.runtime` 目录，不修改系统全局配置，也不会下载、启动或停止 MySQL。
 
 ## 项目结构
 
@@ -17,7 +17,7 @@
 .\scripts\start-all.ps1
 ```
 
-复用本机 MySQL 时只连接现有服务，不下载、启动、停止或修改本机 MySQL：
+本地默认连接 `root/root@127.0.0.1:3306/invoice_title`。需要使用其他凭据时，通过环境变量覆盖；启动脚本只检查连接地址是否可达，不会管理 MySQL：
 
 ```powershell
 $env:INVOICE_MYSQL_HOST = '127.0.0.1'
@@ -25,8 +25,8 @@ $env:INVOICE_MYSQL_PORT = '3306'
 $env:INVOICE_MYSQL_DATABASE = 'invoice_title'
 $env:INVOICE_MYSQL_USERNAME = '你的用户名'
 $env:INVOICE_MYSQL_PASSWORD = '你的密码'
-.\scripts\bootstrap.ps1 -UseLocalMySql
-.\scripts\start-all.ps1 -UseLocalMySql
+.\scripts\bootstrap.ps1
+.\scripts\start-all.ps1
 ```
 
 首次启动可通过环境变量创建唯一超级管理员；后续启动不会覆盖数据库中已修改的密码：
@@ -39,7 +39,7 @@ $env:INVOICE_SUPER_ADMIN_DISPLAY_NAME = '超级管理员'
 
 ## 双企业钉钉配置
 
-生产密钥不写入 `application.yml`，只通过生产环境变量或配置中心注入。项目按下列变量名绑定到 `sebo.dingtalk.organizations`：
+生产密钥不写入 `application.yml`，只通过生产环境变量注入。项目按下列变量名绑定到 `sebo.dingtalk.organizations`：
 
 ```dotenv
 SEBO_DINGTALK_ENABLED=true
@@ -100,10 +100,7 @@ https://<员工端域名>/?corpCode=walden
 | 员工端 | 24173 |
 | 财务端 | 24175 |
 | 后端 API / Swagger | 28082 |
-| Nacos HTTP | 28848 |
-| Nacos gRPC | 29848、29849 |
-| 项目内 MySQL | 23306 |
-| Redis | 26379 |
+| 本机 MySQL（外部服务） | 3306 |
 
 启动脚本会先检查端口，遇到占用时直接停止，不关闭其他项目的进程。
 

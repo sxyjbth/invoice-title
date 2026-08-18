@@ -22,30 +22,24 @@ class RuntimeScriptContractTest {
     }
 
     @Test
-    void infrastructureScriptWritesNonInteractiveNacosAuthenticationProperties() throws IOException {
+    void localRuntimeUsesExistingMysqlOn3306WithoutManagingIt() throws IOException {
+        String bootstrap = readProjectFile("scripts", "bootstrap.ps1");
+        String startAll = readProjectFile("scripts", "start-all.ps1");
         String infrastructure = readProjectFile("scripts", "start-infrastructure.ps1");
+        String status = readProjectFile("scripts", "status.ps1");
+        String stop = readProjectFile("scripts", "stop-all.ps1");
 
+        assertThat(bootstrap.toLowerCase()).doesNotContain("nacos", "redis", "mysql-8.4.10");
         assertThat(infrastructure)
-                .contains("Set-NacosProperty")
-                .contains("Set-NacosProperty $nacosProperties 'nacos.server.main.port' '28848'")
-                .contains("Set-NacosProperty $nacosProperties 'nacos.console.port' '28081'")
-                .contains("Assert-PortFree 28081 'Nacos Console'")
-                .contains("Assert-PortFree 27848 'Nacos JRaft'")
-                .contains("nacos.core.auth.server.identity.key")
-                .contains("nacos.core.auth.server.identity.value")
-                .contains("nacos.core.auth.plugin.nacos.token.secret.key");
-    }
+                .contains("existing MySQL")
+                .doesNotContainIgnoringCase("mysqld")
+                .doesNotContainIgnoringCase("nacos")
+                .doesNotContainIgnoringCase("redis");
+        assertThat(status).contains("else { 3306 }");
+        assertThat(stop).doesNotContainIgnoringCase("mysqladmin");
 
-    @Test
-    void localNacosRunsWithoutBootstrapCredentialsOrRepeatedLoginFailures() throws IOException {
-        String infrastructure = readProjectFile("scripts", "start-infrastructure.ps1");
-        String localConfiguration = readProjectFile(
-                "backend", "src", "main", "resources", "application-local.yml");
-
-        assertThat(infrastructure).contains("$env:NACOS_AUTH_ENABLE = 'false'");
-        assertThat(localConfiguration)
-                .doesNotContain("username: nacos")
-                .doesNotContain("password: nacos");
+        assertThat(String.join("\n", bootstrap, startAll, infrastructure, status, stop))
+                .doesNotContain("23306", "UseLocalMySql");
     }
 
     @Test

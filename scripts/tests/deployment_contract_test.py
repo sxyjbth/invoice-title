@@ -57,28 +57,51 @@ class DeploymentContractTest(unittest.TestCase):
             config,
         )
 
-    def test_nacos_service_is_private_and_has_memory_limits(self):
-        service = (PROJECT_ROOT / "deploy/systemd/invoice-title-nacos.service").read_text(encoding="utf-8")
+    def test_backend_service_depends_only_on_network_and_mysql(self):
+        service = (PROJECT_ROOT / "deploy/systemd/invoice-title.service").read_text(encoding="utf-8")
 
-        self.assertIn("User=invoice_title", service)
-        self.assertIn("NACOS_SERVER_PORT=28848", service)
-        self.assertIn("NACOS_BIND_IP=127.0.0.1", service)
-        self.assertIn("JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64", service)
-        self.assertIn("MODE=standalone", service)
-        self.assertIn("--server.address=${NACOS_BIND_IP}", service)
-        self.assertIn("-Dnacos.deployment.type=server", service)
-        self.assertIn("--nacos.server.main.port=${NACOS_SERVER_PORT}", service)
-        self.assertNotIn("--server.port=${NACOS_SERVER_PORT}", service)
-        self.assertIn("IPAddressDeny=any", service)
-        self.assertIn("IPAddressAllow=localhost", service)
+        self.assertIn("After=network-online.target mysql.service", service)
+        self.assertNotIn("nacos", service.lower())
+        self.assertNotIn("redis", service.lower())
+        self.assertFalse((PROJECT_ROOT / "deploy/systemd/invoice-title-nacos.service").exists())
 
-    def test_production_profile_uses_nacos_without_local_seed_migrations(self):
+    def test_production_profile_uses_environment_configuration_without_local_seed_migrations(self):
         config = (PROJECT_ROOT / "backend/src/main/resources/application-prod.yml").read_text(encoding="utf-8")
 
-        self.assertIn("optional:nacos:invoice-title-service.yml", config)
-        self.assertIn("127.0.0.1:28848", config)
+        self.assertNotIn("nacos", config.lower())
+        self.assertNotIn("cloud:", config.lower())
         self.assertIn("classpath:db/migration", config)
         self.assertNotIn("classpath:db/local", config)
+
+    def test_backend_dependencies_do_not_include_nacos_or_redis(self):
+        pom = (PROJECT_ROOT / "backend/pom.xml").read_text(encoding="utf-8")
+        application = (PROJECT_ROOT / "backend/src/main/resources/application.yml").read_text(encoding="utf-8")
+
+        self.assertNotIn("nacos", pom.lower())
+        self.assertNotIn("redis", pom.lower())
+        self.assertNotIn("spring-cloud", pom.lower())
+        self.assertNotIn("redis", application.lower())
+
+    def test_local_runtime_always_reuses_existing_mysql_on_port_3306(self):
+        application = (PROJECT_ROOT / "backend/src/main/resources/application.yml").read_text(encoding="utf-8")
+        bootstrap = (PROJECT_ROOT / "scripts/bootstrap.ps1").read_text(encoding="utf-8")
+        start_all = (PROJECT_ROOT / "scripts/start-all.ps1").read_text(encoding="utf-8")
+        infrastructure = (PROJECT_ROOT / "scripts/start-infrastructure.ps1").read_text(encoding="utf-8")
+        status = (PROJECT_ROOT / "scripts/status.ps1").read_text(encoding="utf-8")
+        stop = (PROJECT_ROOT / "scripts/stop-all.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("${INVOICE_MYSQL_PORT:3306}", application)
+        self.assertIn("${INVOICE_MYSQL_USERNAME:root}", application)
+        self.assertIn("${INVOICE_MYSQL_PASSWORD:root}", application)
+        self.assertIn("else { 3306 }", status)
+        self.assertIn("existing MySQL", infrastructure)
+        self.assertNotIn("mysqld", infrastructure.lower())
+        self.assertNotIn("mysqladmin", stop.lower())
+        self.assertNotIn("mysql-8.4.10", bootstrap.lower())
+
+        for content in (application, bootstrap, start_all, infrastructure, status, stop):
+            self.assertNotIn("23306", content)
+            self.assertNotIn("UseLocalMySql", content)
 
     def test_frontend_builds_support_a_public_path_prefix(self):
         employee = (PROJECT_ROOT / "frontend/employee-h5/vite.config.ts").read_text(encoding="utf-8")

@@ -1,7 +1,7 @@
 [Unit]
 Description=Invoice Title Spring Boot Service
-After=network-online.target mysql.service redis-server.service invoice-title-nacos.service
-Wants=network-online.target invoice-title-nacos.service
+After=network-online.target mysql.service
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -21,4 +21,3 @@ LimitNOFILE=65535
 
 [Install]
 WantedBy=multi-user.target
-

@@ -1,8 +1,5 @@
 [CmdletBinding()]
-param(
-    [switch]$SkipInfrastructure,
-    [switch]$UseLocalMySql
-)
+param()
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -52,30 +49,6 @@ Install-Archive -Name 'Apache Maven 3.9.16' `
     -ArchiveName 'apache-maven-3.9.16-bin.zip' `
     -Destination (Join-Path $runtimeRoot 'maven') `
     -Marker (Join-Path $runtimeRoot 'maven\apache-maven-3.9.16\bin\mvn.cmd')
-
-if (-not $SkipInfrastructure) {
-    Install-Archive -Name 'Nacos 3.2.1' `
-        -Url 'https://github.com/alibaba/nacos/releases/download/3.2.1/nacos-server-3.2.1.zip' `
-        -ArchiveName 'nacos-server-3.2.1.zip' `
-        -Destination (Join-Path $runtimeRoot 'nacos') `
-        -Marker (Join-Path $runtimeRoot 'nacos\nacos\bin\startup.cmd')
-
-    if (-not $UseLocalMySql) {
-        Install-Archive -Name 'MySQL 8.4.10' `
-            -Url 'https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.10-winx64.zip' `
-            -ArchiveName 'mysql-8.4.10-winx64.zip' `
-            -Destination (Join-Path $runtimeRoot 'mysql') `
-            -Marker (Join-Path $runtimeRoot 'mysql\mysql-8.4.10-winx64\bin\mysqld.exe')
-    } else {
-        Write-Host '[skip] MySQL download; using the existing local MySQL configured through INVOICE_MYSQL_* variables'
-    }
-
-    Install-Archive -Name 'Redis 8.8.0 Windows local development build' `
-        -Url 'https://github.com/redis-windows/redis-windows/releases/download/8.8.0/Redis-8.8.0-Windows-x64-msys2.zip' `
-        -ArchiveName 'Redis-8.8.0-Windows-x64-msys2.zip' `
-        -Destination (Join-Path $runtimeRoot 'redis\redis-8.8.0') `
-        -Marker (Join-Path $runtimeRoot 'redis\redis-8.8.0\Redis-8.8.0-Windows-x64-msys2\redis-server.exe')
-}
 
 $nodeHome = Join-Path $runtimeRoot 'node\node-v24.18.1-win-x64'
 $pnpmRoot = Join-Path $runtimeRoot 'pnpm'

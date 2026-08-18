@@ -1,12 +1,10 @@
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$mysqlPort = if ($env:INVOICE_MYSQL_PORT) { [int]$env:INVOICE_MYSQL_PORT } else { 23306 }
+$mysqlPort = if ($env:INVOICE_MYSQL_PORT) { [int]$env:INVOICE_MYSQL_PORT } else { 3306 }
 $checks = @(
     @{ Name = 'Employee'; Port = 24173; Url = 'http://127.0.0.1:24173/' },
     @{ Name = 'Finance'; Port = 24175; Url = 'http://127.0.0.1:24175/' },
     @{ Name = 'Backend API'; Port = 28082; Url = 'http://127.0.0.1:28082/swagger-ui.html' },
-    @{ Name = 'Nacos'; Port = 28848; Url = 'http://127.0.0.1:28848/nacos/' },
-    @{ Name = 'MySQL'; Port = $mysqlPort; Url = '' },
-    @{ Name = 'Redis'; Port = 26379; Url = '' }
+    @{ Name = 'MySQL'; Port = $mysqlPort; Url = '' }
 )
 
 foreach ($check in $checks) {

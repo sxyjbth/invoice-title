@@ -16,13 +16,9 @@ spring:
   profiles:
     default: local
   datasource:
-    url: jdbc:mysql://${INVOICE_MYSQL_HOST:127.0.0.1}:${INVOICE_MYSQL_PORT:23306}/${INVOICE_MYSQL_DATABASE:invoice_title}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
-    username: ${INVOICE_MYSQL_USERNAME:invoice_title}
-    password: ${INVOICE_MYSQL_PASSWORD:invoice_title_local}
-  data:
-    redis:
-      host: ${INVOICE_REDIS_HOST:127.0.0.1}
-      port: ${INVOICE_REDIS_PORT:26379}
+    url: jdbc:mysql://${INVOICE_MYSQL_HOST:127.0.0.1}:${INVOICE_MYSQL_PORT:3306}/${INVOICE_MYSQL_DATABASE:invoice_title}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${INVOICE_MYSQL_USERNAME:root}
+    password: ${INVOICE_MYSQL_PASSWORD:root}
   flyway:
     enabled: true
     locations: classpath:db/migration
