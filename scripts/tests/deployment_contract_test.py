@@ -73,6 +73,12 @@ class DeploymentContractTest(unittest.TestCase):
         self.assertIn("uwsgi_temp_path /tmp/uwsgi_temp;", nginx)
         self.assertIn("scgi_temp_path /tmp/scgi_temp;", nginx)
 
+    def test_web_healthcheck_uses_busybox_compatible_grep_flags(self):
+        compose = (PROJECT_ROOT / "deploy/docker/compose.production.yml").read_text(encoding="utf-8")
+
+        self.assertIn("grep -qx 'ok'", compose)
+        self.assertNotIn("grep --quiet", compose)
+
     def test_shared_ingress_candidate_only_adds_invoice_routing(self):
         upstream = (PROJECT_ROOT / "deploy/nginx/invoice-title-docker-upstream.conf").read_text(encoding="utf-8")
         location = (PROJECT_ROOT / "deploy/nginx/invoice-title-docker-location.conf").read_text(encoding="utf-8")
