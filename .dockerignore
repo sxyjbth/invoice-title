@@ -1,0 +1,12 @@
+.git
+.github
+.idea
+.runtime
+.pnpm-store
+**/node_modules
+**/dist
+**/target
+**/coverage
+graphify-out
+*.log
+*.pid

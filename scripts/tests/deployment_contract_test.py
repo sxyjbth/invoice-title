@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 
 
@@ -6,6 +7,80 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class DeploymentContractTest(unittest.TestCase):
+    def test_docker_compose_is_project_scoped_and_does_not_publish_ports(self):
+        compose = (PROJECT_ROOT / "deploy/docker/compose.production.yml").read_text(encoding="utf-8")
+
+        self.assertIn("name: invoice-title", compose)
+        self.assertIn("container_name: invoice-title-backend", compose)
+        self.assertIn("container_name: invoice-title-web", compose)
+        self.assertIn("/opt/invoice-title/config/invoice-title.env", compose)
+        self.assertIn("/data/invoice-title/imports", compose)
+        self.assertIn("name: sebo-meal-network", compose)
+        self.assertIn("external: true", compose)
+        self.assertIsNone(re.search(r"(?m)^\s*ports:\s*$", compose))
+        self.assertNotIn("/opt/sebo-meal", compose)
+        self.assertNotIn("/opt/zhaocai", compose)
+
+    def test_backend_container_is_java21_non_root_and_health_checked(self):
+        dockerfile = (PROJECT_ROOT / "deploy/docker/backend.Dockerfile").read_text(encoding="utf-8")
+        compose = (PROJECT_ROOT / "deploy/docker/compose.production.yml").read_text(encoding="utf-8")
+
+        self.assertIn("eclipse-temurin-21", dockerfile)
+        self.assertIn("USER 10001:10001", dockerfile)
+        self.assertIn("invoice-title-service.jar", dockerfile)
+        self.assertIn("127.0.0.1:28082/v3/api-docs", compose)
+        self.assertIn("read_only: true", compose)
+        self.assertIn("pids_limit:", compose)
+        self.assertIn("max-size: \"20m\"", compose)
+
+    def test_web_container_owns_invoice_paths_and_proxies_api_internally(self):
+        dockerfile = (PROJECT_ROOT / "deploy/docker/web.Dockerfile").read_text(encoding="utf-8")
+        nginx = (PROJECT_ROOT / "deploy/docker/nginx.conf").read_text(encoding="utf-8")
+
+        self.assertIn("VITE_PUBLIC_BASE=/invoice/employee/", dockerfile)
+        self.assertIn("VITE_PUBLIC_BASE=/invoice/finance/", dockerfile)
+        self.assertIn("VITE_API_BASE_PREFIX=/invoice", dockerfile)
+        self.assertIn("location ^~ /invoice/api/", nginx)
+        self.assertIn("proxy_pass http://backend:28082/api/;", nginx)
+        self.assertIn("location ^~ /invoice/employee/", nginx)
+        self.assertIn("location ^~ /invoice/finance/", nginx)
+        self.assertIn("try_files $uri $uri/ /invoice/employee/index.html;", nginx)
+        self.assertIn("try_files $uri $uri/ /invoice/finance/index.html;", nginx)
+
+    def test_shared_ingress_candidate_only_adds_invoice_routing(self):
+        upstream = (PROJECT_ROOT / "deploy/nginx/invoice-title-docker-upstream.conf").read_text(encoding="utf-8")
+        location = (PROJECT_ROOT / "deploy/nginx/invoice-title-docker-location.conf").read_text(encoding="utf-8")
+
+        self.assertIn("upstream invoice_title_web", upstream)
+        self.assertIn("server invoice-title-web:8080 resolve;", upstream)
+        self.assertIn("location ^~ /invoice/", location)
+        self.assertIn("proxy_pass http://invoice_title_web;", location)
+        self.assertNotIn("listen ", upstream + location)
+        self.assertNotIn("location / ", upstream + location)
+        self.assertIsNone(re.search(r"location\s+(?:\^~\s+)?/api/", location))
+
+    def test_employee_entry_publishes_invoice_share_metadata(self):
+        html = (PROJECT_ROOT / "frontend/employee-h5/index.html").read_text(encoding="utf-8")
+
+        self.assertIn('<meta property="og:title" content="发票抬头"', html)
+        self.assertIn('<meta property="og:description"', html)
+        self.assertIn('%BASE_URL%invoice-title-share.png', html)
+        self.assertTrue((PROJECT_ROOT / "frontend/employee-h5/public/invoice-title-share.png").is_file())
+
+    def test_server_prepare_script_is_scoped_and_refuses_to_start_services(self):
+        script = (PROJECT_ROOT / "deploy/docker/prepare-target-server.sh").read_text(encoding="utf-8")
+
+        self.assertIn('APP_HOME="/opt/invoice-title"', script)
+        self.assertIn('DATA_HOME="/data/invoice-title"', script)
+        self.assertIn('invoice_title_app', script)
+        self.assertIn('invoice_title', script)
+        self.assertNotIn("docker compose up", script)
+        self.assertNotIn("systemctl restart", script)
+        self.assertNotIn("nginx -s reload", script)
+        self.assertNotIn("/opt/sebo-meal/app", script)
+        self.assertNotIn("/opt/zhaocai", script)
+        self.assertNotIn("`", script)
+
     def test_nginx_uses_isolated_ip_paths_without_replacing_existing_routes(self):
         config = (PROJECT_ROOT / "deploy/nginx/invoice-title.conf").read_text(encoding="utf-8")
 
