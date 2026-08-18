@@ -64,6 +64,15 @@ class DeploymentContractTest(unittest.TestCase):
         self.assertIn("try_files $uri $uri/ /invoice/employee/index.html;", nginx)
         self.assertIn("try_files $uri $uri/ /invoice/finance/index.html;", nginx)
 
+    def test_web_nginx_uses_only_writable_temp_paths_with_read_only_root(self):
+        nginx = (PROJECT_ROOT / "deploy/docker/nginx.conf").read_text(encoding="utf-8")
+
+        self.assertIn("client_body_temp_path /tmp/client_temp;", nginx)
+        self.assertIn("proxy_temp_path /tmp/proxy_temp;", nginx)
+        self.assertIn("fastcgi_temp_path /tmp/fastcgi_temp;", nginx)
+        self.assertIn("uwsgi_temp_path /tmp/uwsgi_temp;", nginx)
+        self.assertIn("scgi_temp_path /tmp/scgi_temp;", nginx)
+
     def test_shared_ingress_candidate_only_adds_invoice_routing(self):
         upstream = (PROJECT_ROOT / "deploy/nginx/invoice-title-docker-upstream.conf").read_text(encoding="utf-8")
         location = (PROJECT_ROOT / "deploy/nginx/invoice-title-docker-location.conf").read_text(encoding="utf-8")
