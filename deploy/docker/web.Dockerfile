@@ -1,4 +1,4 @@
-FROM node:24.11.1-alpine3.22 AS builder
+FROM m.daocloud.io/docker.io/library/node:24.11.1-alpine3.22 AS builder
 
 WORKDIR /workspace
 RUN npm install --global pnpm@10.17.1
@@ -19,7 +19,7 @@ RUN VITE_PUBLIC_BASE=/invoice/finance/ \
     VITE_API_BASE_PREFIX=/invoice \
     pnpm --filter @invoice-title/finance-admin build
 
-FROM nginx:1.28.0-alpine
+FROM m.daocloud.io/docker.io/library/nginx:1.28.0-alpine
 
 COPY deploy/docker/nginx.conf /etc/nginx/nginx.conf
 COPY --from=builder /workspace/frontend/employee-h5/dist /usr/share/nginx/html/invoice/employee

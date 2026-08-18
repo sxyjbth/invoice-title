@@ -33,6 +33,16 @@ class DeploymentContractTest(unittest.TestCase):
         self.assertIn("pids_limit:", compose)
         self.assertIn("max-size: \"20m\"", compose)
 
+    def test_container_base_images_use_the_server_reachable_registry_mirror(self):
+        backend = (PROJECT_ROOT / "deploy/docker/backend.Dockerfile").read_text(encoding="utf-8")
+        web = (PROJECT_ROOT / "deploy/docker/web.Dockerfile").read_text(encoding="utf-8")
+
+        mirror = "m.daocloud.io/docker.io/library/"
+        self.assertIn(f"FROM {mirror}maven:3.9.11-eclipse-temurin-21", backend)
+        self.assertIn(f"FROM {mirror}eclipse-temurin:21-jre-jammy", backend)
+        self.assertIn(f"FROM {mirror}node:24.11.1-alpine3.22", web)
+        self.assertIn(f"FROM {mirror}nginx:1.28.0-alpine", web)
+
     def test_web_container_owns_invoice_paths_and_proxies_api_internally(self):
         dockerfile = (PROJECT_ROOT / "deploy/docker/web.Dockerfile").read_text(encoding="utf-8")
         nginx = (PROJECT_ROOT / "deploy/docker/nginx.conf").read_text(encoding="utf-8")

@@ -1,4 +1,4 @@
-FROM maven:3.9.11-eclipse-temurin-21 AS builder
+FROM m.daocloud.io/docker.io/library/maven:3.9.11-eclipse-temurin-21 AS builder
 
 WORKDIR /workspace
 COPY backend/pom.xml backend/pom.xml
@@ -12,7 +12,7 @@ RUN mvn --batch-mode -f backend/pom.xml \
     -s scripts/maven-settings.xml \
     clean verify
 
-FROM eclipse-temurin:21-jre-jammy
+FROM m.daocloud.io/docker.io/library/eclipse-temurin:21-jre-jammy
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
