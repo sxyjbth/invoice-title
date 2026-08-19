@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { inject } from "vue";
-import { ArrowDown, Plus, Search, Upload } from "@element-plus/icons-vue";
+import { Plus, Search, Upload } from "@element-plus/icons-vue";
 import { financeLayoutKey } from "../layouts/finance-layout-context";
 
 const {
@@ -25,7 +25,7 @@ const {
   <main class="content">
     <section class="toolbar-row" aria-label="抬头查询操作">
       <el-input v-model="keyword" clearable placeholder="搜索公司名称或纳税人识别号" :prefix-icon="Search" @keyup.enter="pageNum = 1; loadTitles()" />
-      <el-button @click="pageNum = 1; loadTitles()">筛选 <el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+      <el-button aria-label="搜索发票抬头" :icon="Search" @click="pageNum = 1; loadTitles()">筛选</el-button>
       <span class="toolbar-spacer" />
       <el-button data-testid="batch-import" @click="openImportDialog"><el-icon><Upload /></el-icon>批量导入</el-button>
       <el-button type="primary" @click="resetCreateForm"><el-icon><Plus /></el-icon>新增抬头</el-button>

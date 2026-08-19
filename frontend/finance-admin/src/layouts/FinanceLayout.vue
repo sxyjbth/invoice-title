@@ -179,7 +179,6 @@ const statusOptions = computed<Array<{ code: "ALL" | StatusCode; label: string; 
   { code: "ALL", label: "全部", count: statusCounts.ALL },
   { code: "PUBLISHED", label: "已发布", count: statusCounts.PUBLISHED },
   { code: "DRAFT", label: "草稿", count: statusCounts.DRAFT },
-  { code: "DISABLED", label: "已停用", count: statusCounts.DISABLED },
 ]);
 
 const subjects = ref<InvoiceSubject[]>([
@@ -324,6 +323,35 @@ const titleForm = reactive({
   subjectIds: [] as number[],
   status: "DRAFT" as "DRAFT" | "PUBLISHED",
 });
+const taxpayerIdPattern = /^[0-9A-Z]{15,20}$/;
+const phonePattern = /^(?:$|1[3-9]\d{9}|0\d{2,3}-?\d{7,8}(?:-\d{1,6})?|(?:400|800)-?\d{3}-?\d{4})$/;
+const bankAccountPattern = /^(?:$|\d{8,32})$/;
+const titleFormErrors = reactive({ companyName: "", taxpayerId: "", phone: "", bankAccount: "" });
+
+function clearTitleFormErrors() {
+  Object.assign(titleFormErrors, { companyName: "", taxpayerId: "", phone: "", bankAccount: "" });
+}
+
+function validateTitleForm() {
+  clearTitleFormErrors();
+  const companyName = titleForm.companyName.trim();
+  const taxpayerId = titleForm.taxpayerId.trim();
+  const phone = titleForm.phone.trim();
+  const bankAccount = titleForm.bankAccount.trim();
+  if (!companyName) titleFormErrors.companyName = "公司名称不能为空";
+  if (!taxpayerId) {
+    titleFormErrors.taxpayerId = "纳税人识别号不能为空";
+  } else if (!taxpayerIdPattern.test(taxpayerId)) {
+    titleFormErrors.taxpayerId = "纳税人识别号应为 15-20 位大写字母或数字";
+  }
+  if (!phonePattern.test(phone)) {
+    titleFormErrors.phone = "请输入正确的手机号、固定电话或 400/800 客服电话";
+  }
+  if (!bankAccountPattern.test(bankAccount)) {
+    titleFormErrors.bankAccount = "银行账号应为 8-32 位数字";
+  }
+  return !Object.values(titleFormErrors).some(Boolean);
+}
 
 const subjectForm = reactive({ name: "", status: "ENABLED" as "ENABLED" | "DISABLED", sortNo: 0 });
 const permissionForm = reactive({
@@ -548,7 +576,7 @@ function selectStatus(status: "ALL" | StatusCode) {
 }
 
 function statusLabel(status: StatusCode) {
-  return statusOptions.value.find((item) => item.code === status)?.label ?? status;
+  return { PUBLISHED: "已发布", DRAFT: "草稿", DISABLED: "已停用" }[status];
 }
 
 function statusClass(status: StatusCode) {
@@ -651,6 +679,7 @@ function resetCreateForm() {
     subjectIds: [],
     status: "DRAFT",
   });
+  clearTitleFormErrors();
   createVisible.value = true;
 }
 
@@ -676,14 +705,12 @@ async function openTitleEditor(title: InvoiceTitle) {
     subjectIds: [...detail.subjectIds],
     status: detail.status === "PUBLISHED" ? "PUBLISHED" : "DRAFT",
   });
+  clearTitleFormErrors();
   createVisible.value = true;
 }
 
 async function saveTitle(status: "DRAFT" | "PUBLISHED") {
-  if (!titleForm.companyName.trim() || !titleForm.taxpayerId.trim()) {
-    ElMessage.warning("请填写公司名称和纳税人识别号");
-    return;
-  }
+  if (!validateTitleForm()) return;
   const subjectIds = [...titleForm.subjectIds];
   if (status === "PUBLISHED" && subjectIds.length === 0) {
     ElMessage.warning("保存并发布时请至少选择一个展示主体");
@@ -1144,14 +1171,14 @@ provide(financeLayoutKey, {
     </el-dialog>
 
     <el-dialog v-model="createVisible" :title="editingTitleId ? '编辑发票抬头' : '新增发票抬头'" width="720px">
-      <el-form label-position="top">
+      <el-form :model="titleForm" label-position="top">
         <div class="form-grid">
-          <el-form-item label="公司名称"><el-input v-model="titleForm.companyName" placeholder="请输入完整公司名称" /></el-form-item>
-          <el-form-item label="纳税人识别号"><el-input v-model="titleForm.taxpayerId" placeholder="请输入纳税人识别号" /></el-form-item>
+          <el-form-item label="公司名称" prop="companyName" required><el-input v-model="titleForm.companyName" placeholder="请输入完整公司名称" maxlength="200" @input="titleFormErrors.companyName = ''" /><span v-if="titleFormErrors.companyName" class="el-form-item__error">{{ titleFormErrors.companyName }}</span></el-form-item>
+          <el-form-item label="纳税人识别号" prop="taxpayerId" required><el-input v-model="titleForm.taxpayerId" placeholder="请输入15-20位大写字母或数字" maxlength="20" @input="titleFormErrors.taxpayerId = ''" /><span v-if="titleFormErrors.taxpayerId" class="el-form-item__error">{{ titleFormErrors.taxpayerId }}</span></el-form-item>
           <el-form-item class="full" label="注册地址"><el-input v-model="titleForm.address" placeholder="请输入注册地址" /></el-form-item>
-          <el-form-item label="电话"><el-input v-model="titleForm.phone" placeholder="请输入联系电话" /></el-form-item>
+          <el-form-item label="电话" prop="phone"><el-input v-model="titleForm.phone" placeholder="请输入手机号、固定电话或400/800客服电话" maxlength="50" @input="titleFormErrors.phone = ''" /><span v-if="titleFormErrors.phone" class="el-form-item__error">{{ titleFormErrors.phone }}</span></el-form-item>
           <el-form-item label="开户行"><el-input v-model="titleForm.bankName" placeholder="请输入开户银行" /></el-form-item>
-          <el-form-item label="银行账号"><el-input v-model="titleForm.bankAccount" placeholder="请输入银行账号" /></el-form-item>
+          <el-form-item label="银行账号" prop="bankAccount"><el-input v-model="titleForm.bankAccount" placeholder="请输入8-32位数字" maxlength="32" @input="titleFormErrors.bankAccount = ''" /><span v-if="titleFormErrors.bankAccount" class="el-form-item__error">{{ titleFormErrors.bankAccount }}</span></el-form-item>
           <el-form-item label="展示主体（可后期选择）">
             <el-select v-model="titleForm.subjectIds" multiple collapse-tags placeholder="可选择一个或多个主体">
               <el-option v-for="subject in subjects.filter((item) => item.status === 'ENABLED')" :key="subject.id" :label="subject.name" :value="subject.id" />

@@ -93,18 +93,28 @@ describe("财务端发票抬头管理", () => {
     expect(wrapper.get('[data-testid="batch-import"]').text()).toContain("批量导入");
   });
 
-  it("提供全部、已发布、草稿和已停用状态筛选", async () => {
+  it("抬头状态筛选只提供全部、已发布和草稿", async () => {
     const wrapper = await mountAdmin();
 
     const statusFilter = wrapper.get('[aria-label="抬头状态筛选"]');
     expect(statusFilter.text()).toContain("全部");
     expect(statusFilter.text()).toContain("已发布");
     expect(statusFilter.text()).toContain("草稿");
-    expect(statusFilter.text()).toContain("已停用");
+    expect(statusFilter.text()).not.toContain("已停用");
+    expect(statusFilter.find('[data-status="DISABLED"]').exists()).toBe(false);
+    expect(wrapper.get("tbody").text()).toContain("已停用");
 
     await statusFilter.get('[data-status="DRAFT"]').trigger("click");
     expect(wrapper.get("tbody").text()).toContain("北京示例技术服务有限公司");
     expect(wrapper.get("tbody").text()).not.toContain("杭州赛宝卓越技术有限公司");
+  });
+
+  it("抬头查询按钮使用搜索图标", async () => {
+    const wrapper = await mountAdmin();
+    const searchButton = wrapper.get('[aria-label="搜索发票抬头"]');
+
+    expect(searchButton.text()).toContain("筛选");
+    expect(searchButton.find("svg").exists()).toBe(true);
   });
 
   it("分页组件使用中文文案", async () => {
@@ -140,6 +150,50 @@ describe("财务端发票抬头管理", () => {
     await nextTick();
     expect(document.body.textContent).toContain("编辑发票抬头");
     expect((document.body.querySelector(".el-dialog input") as HTMLInputElement).value).toBe("杭州赛宝卓越技术有限公司");
+    wrapper.unmount();
+  });
+
+  it("新增抬头时公司名称和纳税人识别号显示必填校验", async () => {
+    const request = vi.spyOn(globalThis, "fetch");
+    const wrapper = await mountAdmin(true);
+    await wrapper.findAll("button").find((item) => item.text().includes("新增抬头"))!.trigger("click");
+    await nextTick();
+
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("保存草稿"))!.click();
+    await flushPromises();
+
+    expect(document.body.textContent).toContain("公司名称不能为空");
+    expect(document.body.textContent).toContain("纳税人识别号不能为空");
+    expect(request).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("新增抬头时校验纳税人识别号、联系电话和银行账号格式", async () => {
+    const request = vi.spyOn(globalThis, "fetch");
+    const wrapper = await mountAdmin(true);
+    await wrapper.findAll("button").find((item) => item.text().includes("新增抬头"))!.trigger("click");
+    await nextTick();
+
+    const inputs = Array.from(document.body.querySelectorAll<HTMLInputElement>(".el-dialog input"));
+    const values: Array<[number, string]> = [
+      [0, "格式校验测试有限公司"],
+      [1, "taxpayer-123"],
+      [3, "12345"],
+      [5, "6222-ABC"],
+    ];
+    values.forEach(([index, value]) => {
+      inputs[index].value = value;
+      inputs[index].dispatchEvent(new Event("input"));
+    });
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("保存草稿"))!.click();
+    await flushPromises();
+
+    expect(document.body.textContent).toContain("纳税人识别号应为 15-20 位大写字母或数字");
+    expect(document.body.textContent).toContain("请输入正确的手机号、固定电话或 400/800 客服电话");
+    expect(document.body.textContent).toContain("银行账号应为 8-32 位数字");
+    expect(request).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
@@ -242,6 +296,25 @@ describe("财务端发票抬头管理", () => {
 
     await statusFilter.get('[data-status="DISABLED"]').trigger("click");
     expect(wrapper.get("tbody").text()).not.toContain("杭州主体");
+  });
+
+  it("主体列表操作栏居中并用红色停用、绿色启用区分状态操作", async () => {
+    const wrapper = await mountAdmin();
+    await clickMenu(wrapper, "主体管理");
+
+    const operationHeader = wrapper.findAll("thead th").find((item) => item.text() === "操作")!;
+    const operationCell = wrapper.findAll("tbody tr")[0].find("td:last-child");
+    const disableButton = operationCell.findAll("button").find((item) => item.text().includes("停用"))!;
+    expect(operationHeader.classes()).toContain("subject-actions-column");
+    expect(operationCell.classes()).toContain("subject-actions-column");
+    expect(adminStyles).toContain(".table-scroll .subject-actions-column { text-align: center; }");
+    expect(disableButton.classes()).toContain("el-button--danger");
+
+    layoutVm(wrapper).subjects[0].status = "DISABLED";
+    await nextTick();
+    const enableButton = wrapper.findAll("tbody tr")[0].find("td:last-child").findAll("button")
+      .find((item) => item.text().includes("启用"))!;
+    expect(enableButton.classes()).toContain("el-button--success");
   });
 
   it("主体支持新增、编辑和停用操作", async () => {

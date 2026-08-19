@@ -33,13 +33,13 @@ const {
       <header class="card-header"><div><h2>主体列表</h2><p>停用主体后，对应抬头及二维码将立即停止展示</p></div><span>共 {{ currentSubjectTotal }} 条</span></header>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>主体名称</th><th>绑定抬头</th><th>覆盖员工</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+          <thead><tr><th>主体名称</th><th>绑定抬头</th><th>覆盖员工</th><th>状态</th><th>更新时间</th><th class="subject-actions-column">操作</th></tr></thead>
           <tbody>
             <tr v-for="subject in filteredSubjects" :key="subject.id">
               <td><strong>{{ subject.name }}</strong></td><td>{{ subject.boundTitleName || '未绑定' }}</td><td>{{ subject.employeeCount }} 人</td>
               <td><span class="status" :class="subject.status === 'ENABLED' ? 'status-published' : 'status-disabled'"><i />{{ subject.status === 'ENABLED' ? '启用' : '停用' }}</span></td>
               <td>{{ subject.updatedAt }}<small>{{ subject.updatedBy }}</small></td>
-              <td class="row-actions"><el-button link type="primary" @click="openTitleBinding(subject)">绑定抬头</el-button><el-button link type="primary" @click="openSubjectEditor(subject)">编辑</el-button><el-button link type="primary" @click="changeSubjectStatus(subject)">{{ subject.status === 'ENABLED' ? '停用' : '启用' }}</el-button></td>
+              <td class="row-actions subject-actions-column"><el-button link type="primary" @click="openTitleBinding(subject)">绑定抬头</el-button><el-button link type="primary" @click="openSubjectEditor(subject)">编辑</el-button><el-button link :type="subject.status === 'ENABLED' ? 'danger' : 'success'" @click="changeSubjectStatus(subject)">{{ subject.status === 'ENABLED' ? '停用' : '启用' }}</el-button></td>
             </tr>
             <tr v-if="filteredSubjects.length === 0"><td class="empty-row" colspan="6">未找到符合条件的主体</td></tr>
           </tbody>

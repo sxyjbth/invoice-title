@@ -75,6 +75,59 @@ class FinanceAdministrationCrudWebTest {
     }
 
     @Test
+    void titleEndpointRejectsMissingCompanyNameAndTaxpayerId() throws Exception {
+        HttpResponse<String> missingCompanyName = send(administrator, "POST", "/api/admin/invoice-titles", """
+                {"companyName":"","taxpayerId":"91330100MA2B123456",
+                 "subjectIds":[],"status":"DRAFT"}
+                """);
+        assertThat(missingCompanyName.statusCode()).isEqualTo(400);
+        assertThat(missingCompanyName.body()).contains("公司名称不能为空");
+
+        HttpResponse<String> missingTaxpayerId = send(administrator, "POST", "/api/admin/invoice-titles", """
+                {"companyName":"必填校验测试有限公司","taxpayerId":"",
+                 "subjectIds":[],"status":"DRAFT"}
+                """);
+        assertThat(missingTaxpayerId.statusCode()).isEqualTo(400);
+        assertThat(missingTaxpayerId.body()).contains("纳税人识别号不能为空");
+    }
+
+    @Test
+    void titleEndpointRejectsInvalidTaxpayerIdFormat() throws Exception {
+        HttpResponse<String> response = send(administrator, "POST", "/api/admin/invoice-titles", """
+                {"companyName":"纳税人识别号校验有限公司","taxpayerId":"taxpayer-123",
+                 "phone":"13800138000","bankAccount":"6222021234567890",
+                 "subjectIds":[],"status":"DRAFT"}
+                """);
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("纳税人识别号应为 15-20 位大写字母或数字");
+    }
+
+    @Test
+    void titleEndpointRejectsInvalidPhoneFormat() throws Exception {
+        HttpResponse<String> response = send(administrator, "POST", "/api/admin/invoice-titles", """
+                {"companyName":"联系电话校验有限公司","taxpayerId":"91330100MA2B123457",
+                 "phone":"12345","bankAccount":"6222021234567890",
+                 "subjectIds":[],"status":"DRAFT"}
+                """);
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("请输入正确的手机号、固定电话或 400/800 客服电话");
+    }
+
+    @Test
+    void titleEndpointRejectsInvalidBankAccountFormat() throws Exception {
+        HttpResponse<String> response = send(administrator, "POST", "/api/admin/invoice-titles", """
+                {"companyName":"银行账号校验有限公司","taxpayerId":"91330100MA2B123458",
+                 "phone":"0571-88888888","bankAccount":"6222-ABC",
+                 "subjectIds":[],"status":"DRAFT"}
+                """);
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("银行账号应为 8-32 位数字");
+    }
+
+    @Test
     void titleVersionHistoryIsPaginatedAndRestoreCreatesANewDraftVersion() throws Exception {
         HttpResponse<String> firstPage = get(administrator,
                 "/api/admin/invoice-titles/1/versions?pageNum=1&pageSize=2");

@@ -66,6 +66,7 @@ nav a.active { border-left-color: var(--blue); color: #fff; background: #174579;
 .status-draft { color: #b54708; }.status-draft i { background: #f79009; }
 .status-disabled { color: #667085; }.status-disabled i { background: #98a2b3; }
 .row-actions { white-space: nowrap; }
+.table-scroll .subject-actions-column { text-align: center; }
 .empty-row { height: 140px; color: #98a2b3; text-align: center; }
 .pagination-row { display: flex; min-height: 66px; align-items: center; justify-content: flex-end; padding: 0 20px; }
 .supporting-page { min-height: calc(100vh - 188px); }
