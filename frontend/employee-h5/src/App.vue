@@ -86,14 +86,26 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 async function resolveDingTalkOrganization(): Promise<DingTalkOrganization> {
   const organizations = await api<DingTalkOrganization[]>("/api/employee/auth/organizations");
   const params = new URLSearchParams(window.location.search);
-  const requestedCorpCode = params.get("corpCode") || import.meta.env.VITE_DINGTALK_CORP_CODE;
+  const requestedCorpCode = params.get("corpCode");
   if (requestedCorpCode) {
     const matched = organizations.find((item) => item.corpCode === requestedCorpCode);
     if (!matched) throw new Error(`未接入的钉钉企业：${requestedCorpCode}`);
     return matched;
   }
+  const requestedCorpId = params.get("corpId");
+  if (requestedCorpId) {
+    const matched = organizations.find((item) => item.corpId === requestedCorpId);
+    if (!matched) throw new Error(`未接入的钉钉企业：${requestedCorpId}`);
+    return matched;
+  }
+  const configuredCorpCode = import.meta.env.VITE_DINGTALK_CORP_CODE;
+  if (configuredCorpCode) {
+    const matched = organizations.find((item) => item.corpCode === configuredCorpCode);
+    if (!matched) throw new Error(`未接入的钉钉企业：${configuredCorpCode}`);
+    return matched;
+  }
   if (organizations.length === 1) return organizations[0];
-  throw new Error("工作台入口缺少企业参数 corpCode，请联系管理员检查应用地址");
+  throw new Error("工作台入口缺少企业参数 corpCode 或 corpId，请联系管理员检查应用地址");
 }
 
 async function initialize() {

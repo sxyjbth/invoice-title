@@ -29,7 +29,7 @@ describe("员工端发票抬头", () => {
     };
   });
 
-  function mockEmployeeApis(expectedAuthCode = "ding-auth-code") {
+  function mockEmployeeApis(expectedAuthCode = "ding-auth-code", expectedCorpCode = "sebo") {
     return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.includes("/api/employee/auth/organizations")) {
@@ -39,7 +39,7 @@ describe("员工端发票抬头", () => {
         ]), { status: 200 });
       }
       if (url.includes("/api/employee/auth/dingtalk")) {
-        expect(init?.body).toBe(JSON.stringify({ corpCode: "sebo", authCode: expectedAuthCode }));
+        expect(init?.body).toBe(JSON.stringify({ corpCode: expectedCorpCode, authCode: expectedAuthCode }));
         return new Response(JSON.stringify({ dingUserId: "ding-employee-001", employeeName: "示例员工" }), { status: 200 });
       }
       if (url.includes("/api/employee/invoice-titles/1/qr-token")) {
@@ -86,6 +86,21 @@ describe("员工端发票抬头", () => {
     expect(request.mock.calls.some(([url]) => String(url).includes("dingUserId="))).toBe(false);
     expect((window as any).dd.runtime.permission.requestAuthCode)
       .toHaveBeenCalledWith(expect.objectContaining({ corpId: "ding-sebo" }));
+  });
+
+  it("兼容钉钉工作台通过 corpId 参数传入企业身份", async () => {
+    window.history.replaceState({}, "", "/?corpId=ding-walden");
+    const request = mockEmployeeApis("ding-auth-code", "walden");
+
+    mount(EmployeeApp, { global });
+    await flushPromises();
+
+    expect((window as any).dd.runtime.permission.requestAuthCode)
+      .toHaveBeenCalledWith(expect.objectContaining({ corpId: "ding-walden" }));
+    expect(request.mock.calls.some(([, init]) => init?.body === JSON.stringify({
+      corpCode: "walden",
+      authCode: "ding-auth-code",
+    }))).toBe(true);
   });
 
   it("展示真实发布人和抬头更新时间", async () => {
