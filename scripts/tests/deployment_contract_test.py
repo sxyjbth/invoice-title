@@ -79,6 +79,13 @@ class DeploymentContractTest(unittest.TestCase):
         self.assertIn("grep -qx 'ok'", compose)
         self.assertNotIn("grep --quiet", compose)
 
+    def test_web_redirects_stay_relative_behind_shared_port_80_ingress(self):
+        nginx = (PROJECT_ROOT / "deploy/docker/nginx.conf").read_text(encoding="utf-8")
+
+        self.assertIn("absolute_redirect off;", nginx)
+        self.assertIn("return 308 /invoice/employee/$is_args$args;", nginx)
+        self.assertIn("return 308 /invoice/finance/$is_args$args;", nginx)
+
     def test_shared_ingress_candidate_only_adds_invoice_routing(self):
         upstream = (PROJECT_ROOT / "deploy/nginx/invoice-title-docker-upstream.conf").read_text(encoding="utf-8")
         location = (PROJECT_ROOT / "deploy/nginx/invoice-title-docker-location.conf").read_text(encoding="utf-8")
