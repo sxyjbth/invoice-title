@@ -331,6 +331,7 @@ const departmentMemberPages = reactive<Record<string, DepartmentMemberPage>>({})
 const loadedDirectoryEmployees = reactive<Record<number, DingEmployee>>({});
 const selectedDepartmentIds = ref<number[]>([]);
 const employeeEnabledDraft = reactive<Record<number, boolean>>({});
+const employeePermissionEdited = reactive<Record<number, boolean>>({});
 const employeePermissionStatus = ref<"ALL" | "ENABLED" | "DISABLED">("ALL");
 const selectedPermissionProfileId = ref(1);
 
@@ -941,6 +942,12 @@ async function loadDepartmentMembers(department: DingDepartment, force = false) 
     const result = await readApi<{ records: DingEmployee[]; total: number }>(response, "部门成员加载失败");
     page.records = result.records ?? [];
     page.total = result.total ?? 0;
+    page.records.forEach((employee) => {
+      loadedDirectoryEmployees[employee.id] = employee;
+      if (!employeePermissionEdited[employee.id]) {
+        employeeEnabledDraft[employee.id] = resolveEmployeeEnabled(employee);
+      }
+    });
     page.loaded = true;
   } catch (error) {
     page.records = [];
@@ -968,6 +975,11 @@ function toggleDepartmentSelection(departmentId: number, selected: boolean) {
   if (selected) ids.add(departmentId);
   else ids.delete(departmentId);
   selectedDepartmentIds.value = [...ids];
+  Object.values(loadedDirectoryEmployees)
+    .filter((employee) => employee.departmentId === departmentId && !employeePermissionEdited[employee.id])
+    .forEach((employee) => {
+      employeeEnabledDraft[employee.id] = resolveEmployeeEnabled(employee);
+    });
 }
 
 async function initializePermissionProfiles() {
@@ -1072,6 +1084,7 @@ function openPermissionEditor(targetType: "USER" | "DEPARTMENT") {
   employeePermissionStatus.value = "ALL";
   selectedDepartmentIds.value = profile.departments.map((department) => department.id);
   Object.keys(employeeEnabledDraft).forEach((key) => delete employeeEnabledDraft[Number(key)]);
+  Object.keys(employeePermissionEdited).forEach((key) => delete employeePermissionEdited[Number(key)]);
   Object.keys(loadedDirectoryEmployees).forEach((key) => delete loadedDirectoryEmployees[Number(key)]);
   permissionDialogVisible.value = true;
   if (targetType === "DEPARTMENT") void Promise.all([loadDirectoryOrganizations(), loadDirectory()]);
@@ -1080,8 +1093,11 @@ function openPermissionEditor(targetType: "USER" | "DEPARTMENT") {
 
 function inheritedEmployeeEnabled(employee: DingEmployee) {
   const profile = activePermissionProfile.value;
+  const departmentIds = permissionDialogVisible.value && permissionForm.targetType === "DEPARTMENT"
+    ? selectedDepartmentIds.value
+    : profile?.departments.map((department) => department.id) ?? [];
   return Boolean(profile && (profile.allEmployeesVisible
-    || profile.departments.some((department) => department.id === employee.departmentId)));
+    || departmentIds.includes(employee.departmentId)));
 }
 
 function employeeRuleId(rule: EmployeeRule) {
@@ -1141,18 +1157,19 @@ async function applyPermissionSelection() {
       else selected.delete(department.id);
     });
     profile.departments = [...selected.values()];
-  } else {
-    const rules = new Map(profile.employeeRules.map((rule) => [employeeRuleId(rule), rule]));
-    Object.entries(employeeEnabledDraft).forEach(([employeeId, enabled]) => {
-      const employee = loadedDirectoryEmployees[Number(employeeId)];
-      if (!employee) return;
-      const inheritedEnabled = inheritedEmployeeEnabled(employee);
-      if (enabled === inheritedEnabled) rules.delete(employee.id);
-      else rules.set(employee.id, { ...employee, effect: enabled ? "ALLOW" : "DENY" });
-    });
-    profile.employeeRules = [...rules.values()];
-    profile.employeeCount = profile.employeeRules.length;
   }
+  const rules = new Map(profile.employeeRules.map((rule) => [employeeRuleId(rule), rule]));
+  Object.entries(employeeEnabledDraft).forEach(([employeeId, enabled]) => {
+    const numericEmployeeId = Number(employeeId);
+    if (permissionForm.targetType === "DEPARTMENT" && !employeePermissionEdited[numericEmployeeId]) return;
+    const employee = loadedDirectoryEmployees[numericEmployeeId];
+    if (!employee) return;
+    const inheritedEnabled = inheritedEmployeeEnabled(employee);
+    if (enabled === inheritedEnabled) rules.delete(employee.id);
+    else rules.set(employee.id, { ...employee, effect: enabled ? "ALLOW" : "DENY" });
+  });
+  profile.employeeRules = [...rules.values()];
+  profile.employeeCount = profile.employeeRules.length;
   if (await savePermissionConfiguration()) permissionDialogVisible.value = false;
 }
 
@@ -1382,6 +1399,19 @@ provide(financeLayoutKey, {
                   <el-table-column prop="employeeNo" label="工号" min-width="120" />
                   <el-table-column prop="departmentName" label="部门" min-width="150" />
                   <el-table-column prop="mobile" label="手机号" min-width="140" />
+                  <el-table-column label="单独启用" min-width="110" align="center">
+                    <template #default="{ row: employee }">
+                      <el-switch
+                        v-model="employeeEnabledDraft[employee.id]"
+                        :aria-label="`${employee.employeeName}的单独启用权限`"
+                        :aria-checked="employeeEnabledDraft[employee.id]"
+                        inline-prompt
+                        active-text="启"
+                        inactive-text="关"
+                        @change="employeePermissionEdited[employee.id] = true"
+                      />
+                    </template>
+                  </el-table-column>
                 </el-table>
                 <el-pagination
                   v-model:current-page="departmentMemberPage(row).pageNum"

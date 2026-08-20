@@ -507,6 +507,93 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
+  it("部门授权中的成员可继承部门权限并保存员工级关闭覆盖", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/admin/directory/organizations")) {
+        return new Response(JSON.stringify([
+          { corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司" },
+        ]), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/departments")) {
+        return new Response(JSON.stringify({ records: [{
+          id: 11,
+          corpCode: "sebo",
+          corpName: "赛宝绿创能源技术（上海）有限公司",
+          dingDepartmentId: "ding-dept-platform",
+          departmentName: "平台开发部",
+          employeeCount: 1,
+        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/employees")) {
+        const employee = url.includes("pageNum=2") ? {
+          id: 102,
+          corpCode: "sebo",
+          corpName: "赛宝绿创能源技术（上海）有限公司",
+          dingUserId: "ding-employee-li",
+          employeeNo: "R01411",
+          employeeName: "李晨",
+          departmentId: 11,
+          departmentName: "平台开发部",
+          mobile: "18223148993",
+        } : {
+          id: 101,
+          corpCode: "sebo",
+          corpName: "赛宝绿创能源技术（上海）有限公司",
+          dingUserId: "ding-employee-sun",
+          employeeNo: "R04952",
+          employeeName: "孙鑫尧",
+          departmentId: 11,
+          departmentName: "平台开发部",
+          mobile: "13936725713",
+        };
+        return new Response(JSON.stringify({ records: [employee], total: 11 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
+    await permissionPage.findAll("button").find((item) => item.text().includes("编辑")
+      && item.element.closest(".permission-level-row")?.textContent?.includes("部门授权"))!.trigger("click");
+    await flushPromises();
+
+    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
+    await flushPromises();
+    const memberSwitch = document.body.querySelector<HTMLElement>('[aria-label="孙鑫尧的单独启用权限"]');
+    expect(memberSwitch).not.toBeNull();
+    expect(memberSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
+
+    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
+      .find((row) => row.textContent?.includes("赛宝绿创能源技术（上海）有限公司")
+        && row.textContent?.includes("平台开发部"));
+    (departmentRow?.querySelector(".el-checkbox") as HTMLElement).click();
+    await nextTick();
+    expect(memberSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
+
+    memberSwitch?.click();
+    await nextTick();
+    expect(memberSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
+    (document.body.querySelector(".department-member-panel .el-pagination .btn-next") as HTMLElement).click();
+    await flushPromises();
+    (document.body.querySelector(".department-member-panel .el-pagination .btn-prev") as HTMLElement).click();
+    await flushPromises();
+    expect(document.body.querySelector('[aria-label="孙鑫尧的单独启用权限"]')
+      ?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("确定选择"))!.click();
+    await flushPromises();
+
+    const saveRequest = request.mock.calls.find(([, init]) => init?.method === "PUT");
+    const savedBody = JSON.parse(String(saveRequest?.[1]?.body));
+    expect(savedBody.departmentIds).toContain(11);
+    expect(savedBody.employeeRules).toContainEqual({ employeeId: 101, effect: "DENY" });
+    wrapper.unmount();
+  });
+
   it("员工授权弹窗确认选择后立即保存个人权限", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ records: [{
       id: 99,
