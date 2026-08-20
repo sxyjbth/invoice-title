@@ -46,7 +46,19 @@
 
     <sql id="employeeConditions">
         WHERE e.status = 'ACTIVE'
-        <if test="departmentId != null">AND e.department_id = #{departmentId}</if>
+        <if test="corpCode != null and corpCode != ''">AND e.corp_code = #{corpCode}</if>
+        <if test="departmentId != null">
+            AND EXISTS (
+                SELECT 1
+                FROM ding_employee_department direct_membership
+                INNER JOIN ding_department member_department
+                  ON member_department.id = direct_membership.department_id
+                 AND member_department.status = 'ENABLED'
+                WHERE direct_membership.employee_id = e.id
+                  AND direct_membership.department_id = #{departmentId}
+                  AND member_department.corp_code = e.corp_code
+            )
+        </if>
         <if test="keyword != null and keyword != ''">
             AND (LOWER(e.employee_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
                 OR LOWER(e.employee_no) LIKE CONCAT('%', LOWER(#{keyword}), '%')
@@ -104,10 +116,21 @@
 
     <sql id="departmentConditions">
         WHERE d.status = 'ENABLED'
+        <if test="corpCode != null and corpCode != ''">AND d.corp_code = #{corpCode}</if>
         <if test="keyword != null and keyword != ''">
             AND LOWER(d.department_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
         </if>
     </sql>
+
+    <select id="selectOrganizations" resultType="com.saibao.invoice.vo.DingOrganizationVO">
+        SELECT d.corp_code, MAX(d.corp_name) AS corp_name
+        FROM ding_department d
+        WHERE d.status = 'ENABLED'
+          AND d.corp_code IS NOT NULL
+          AND d.corp_code != ''
+        GROUP BY d.corp_code
+        ORDER BY MAX(d.corp_name) ASC, d.corp_code ASC
+    </select>
 
     <select id="countDepartments" resultType="long">
         SELECT COUNT(*) FROM ding_department d <include refid="departmentConditions"/>

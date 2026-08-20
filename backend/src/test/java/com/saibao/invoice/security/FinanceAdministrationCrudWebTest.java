@@ -246,6 +246,59 @@ class FinanceAdministrationCrudWebTest {
     }
 
     @Test
+    void directoryEndpointsExposeOrganizationOptionsAndIsolateDepartmentMembersByOrganization() throws Exception {
+        jdbcTemplate.update("UPDATE ding_department SET corp_code = 'sebo', corp_name = '赛宝企业' WHERE id IN (1, 2, 3)");
+        jdbcTemplate.update("UPDATE ding_employee SET corp_code = 'sebo', corp_name = '赛宝企业' WHERE id IN (1, 2, 3, 4)");
+        jdbcTemplate.update("DELETE FROM ding_employee_department WHERE employee_id = 99 OR department_id = 99");
+        jdbcTemplate.update("DELETE FROM ding_employee WHERE id = 99");
+        jdbcTemplate.update("DELETE FROM ding_department WHERE id = 99");
+        jdbcTemplate.update("""
+                INSERT INTO ding_department
+                (id, corp_code, corp_name, ding_department_id, department_name, status, sort_no)
+                VALUES (99, 'walden', '瓦尔登企业', 'ding-dept-walden-platform', '瓦尔登平台部', 'ENABLED', 99)
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO ding_employee
+                (id, corp_code, corp_name, ding_user_id, employee_no, employee_name,
+                 department_id, department_name, mobile, status)
+                VALUES (99, 'walden', '瓦尔登企业', 'ding-user-walden', 'WD0001', '瓦尔登员工',
+                        1, '企业根部门', '13900000099', 'ACTIVE')
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO ding_employee_department (employee_id, department_id, is_primary)
+                VALUES (99, 99, 0)
+                """);
+
+        try {
+            HttpResponse<String> organizations = get(administrator, "/api/admin/directory/organizations");
+            assertThat(organizations.statusCode()).isEqualTo(200);
+            assertThat(organizations.body()).contains("\"corpCode\":\"sebo\"", "\"corpCode\":\"walden\"",
+                    "赛宝企业", "瓦尔登企业");
+
+            HttpResponse<String> waldenDepartments = get(administrator,
+                    "/api/admin/directory/departments?pageNum=1&pageSize=10&corpCode=walden");
+            assertThat(waldenDepartments.statusCode()).isEqualTo(200);
+            assertThat(waldenDepartments.body()).contains("瓦尔登平台部", "\"total\":1").doesNotContain("技术中心");
+
+            HttpResponse<String> waldenMembers = get(administrator,
+                    "/api/admin/directory/employees?pageNum=1&pageSize=10&corpCode=walden&departmentId=99");
+            assertThat(waldenMembers.statusCode()).isEqualTo(200);
+            assertThat(waldenMembers.body()).contains("瓦尔登员工", "WD0001", "\"total\":1").doesNotContain("示例员工");
+
+            HttpResponse<String> crossOrganizationMembers = get(administrator,
+                    "/api/admin/directory/employees?pageNum=1&pageSize=10&corpCode=sebo&departmentId=99");
+            assertThat(crossOrganizationMembers.statusCode()).isEqualTo(200);
+            assertThat(crossOrganizationMembers.body()).contains("\"total\":0").doesNotContain("瓦尔登员工");
+        } finally {
+            jdbcTemplate.update("DELETE FROM ding_employee_department WHERE employee_id = 99 OR department_id = 99");
+            jdbcTemplate.update("DELETE FROM ding_employee WHERE id = 99");
+            jdbcTemplate.update("DELETE FROM ding_department WHERE id = 99");
+            jdbcTemplate.update("UPDATE ding_department SET corp_code = 'default', corp_name = '默认钉钉企业' WHERE id IN (1, 2, 3)");
+            jdbcTemplate.update("UPDATE ding_employee SET corp_code = 'default', corp_name = '默认钉钉企业' WHERE id IN (1, 2, 3, 4)");
+        }
+    }
+
+    @Test
     void permissionProfileUsesDirectorySelectionsAndReturnsEffectiveEmployeeOverrides() throws Exception {
         HttpResponse<String> saved = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
                 {"allEmployeeVisible":false,"departmentIds":[1],

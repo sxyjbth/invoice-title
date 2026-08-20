@@ -11,8 +11,10 @@ import { routeNameByMenu, routeNames, type FinanceMenuCode } from "../router";
 import { financeLayoutKey } from "./finance-layout-context";
 import { useFinanceAuthStore } from "../stores/finance-auth";
 import {
+  ArrowUp,
   Document,
   Download,
+  Lock,
   OfficeBuilding,
   Plus,
   Search,
@@ -90,6 +92,11 @@ type DingDepartment = {
   employeeCount: number;
 };
 
+type DingOrganization = {
+  corpCode: string;
+  corpName: string;
+};
+
 type DingEmployee = {
   id: number;
   corpCode?: string;
@@ -101,6 +108,16 @@ type DingEmployee = {
   departmentName: string;
   mobile: string;
   permissionEnabled?: boolean;
+};
+
+type DepartmentMemberPage = {
+  records: DingEmployee[];
+  total: number;
+  pageNum: number;
+  pageSize: number;
+  loading: boolean;
+  loaded: boolean;
+  error: string;
 };
 
 type EmployeeRule = DingEmployee & { employeeId?: number; effect: "ALLOW" | "DENY" };
@@ -240,6 +257,7 @@ const importHistory = ref<ImportHistory[]>([
 
 const testMode = import.meta.env.MODE === "test";
 const changePasswordVisible = ref(false);
+const profileMenuVisible = ref(false);
 const financeAccounts = ref<FinanceAccount[]>(testMode ? [{
   id: 2,
   username: "wang.finance",
@@ -307,6 +325,9 @@ const directoryPageSize = ref(10);
 const directoryTotal = ref(0);
 const directoryEmployees = ref<DingEmployee[]>([]);
 const directoryDepartments = ref<DingDepartment[]>([]);
+const directoryOrganizations = ref<DingOrganization[]>([]);
+const directoryCorpCode = ref("");
+const departmentMemberPages = reactive<Record<string, DepartmentMemberPage>>({});
 const loadedDirectoryEmployees = reactive<Record<number, DingEmployee>>({});
 const selectedDepartmentIds = ref<number[]>([]);
 const employeeEnabledDraft = reactive<Record<number, boolean>>({});
@@ -506,6 +527,16 @@ async function loadCoreData() {
 async function logout() {
   await auth.logout();
   void router.replace({ name: routeNames.login });
+}
+
+function openChangePasswordFromProfile() {
+  profileMenuVisible.value = false;
+  changePasswordVisible.value = true;
+}
+
+async function logoutFromProfile() {
+  profileMenuVisible.value = false;
+  await logout();
 }
 
 async function handleFinanceAccountResponse(response: Response) {
@@ -858,8 +889,85 @@ function searchDirectory() {
 
 function resetDirectorySearch() {
   directoryKeyword.value = "";
+  if (permissionForm.targetType === "DEPARTMENT") directoryCorpCode.value = "";
   directoryPageNum.value = 1;
   void loadDirectory();
+}
+
+function departmentMemberKey(department: DingDepartment) {
+  return `${department.corpCode ?? "default"}:${department.id}`;
+}
+
+function departmentMemberPage(department: DingDepartment) {
+  const key = departmentMemberKey(department);
+  if (!departmentMemberPages[key]) {
+    departmentMemberPages[key] = {
+      records: [],
+      total: 0,
+      pageNum: 1,
+      pageSize: 10,
+      loading: false,
+      loaded: false,
+      error: "",
+    };
+  }
+  return departmentMemberPages[key];
+}
+
+async function loadDirectoryOrganizations() {
+  try {
+    const response = await fetch("/api/admin/directory/organizations", { credentials: "include" });
+    const result = await readApi<DingOrganization[]>(response, "企业目录加载失败");
+    directoryOrganizations.value = Array.isArray(result) ? result : [];
+  } catch (error) {
+    directoryOrganizations.value = [];
+    ElMessage.error(error instanceof Error ? error.message : "企业目录加载失败");
+  }
+}
+
+async function loadDepartmentMembers(department: DingDepartment, force = false) {
+  const page = departmentMemberPage(department);
+  if (page.loaded && !force) return;
+  page.loading = true;
+  page.error = "";
+  const query = new URLSearchParams({
+    pageNum: String(page.pageNum),
+    pageSize: String(page.pageSize),
+    departmentId: String(department.id),
+  });
+  if (department.corpCode) query.set("corpCode", department.corpCode);
+  try {
+    const response = await fetch(`/api/admin/directory/employees?${query}`, { credentials: "include" });
+    const result = await readApi<{ records: DingEmployee[]; total: number }>(response, "部门成员加载失败");
+    page.records = result.records ?? [];
+    page.total = result.total ?? 0;
+    page.loaded = true;
+  } catch (error) {
+    page.records = [];
+    page.total = 0;
+    page.loaded = false;
+    page.error = error instanceof Error ? error.message : "部门成员加载失败";
+  } finally {
+    page.loading = false;
+  }
+}
+
+function handleDepartmentExpand(department: DingDepartment, expandedRows: DingDepartment[]) {
+  if (expandedRows.some((row) => departmentMemberKey(row) === departmentMemberKey(department))) {
+    void loadDepartmentMembers(department);
+  }
+}
+
+function changeDirectoryOrganization() {
+  directoryPageNum.value = 1;
+  void loadDirectory();
+}
+
+function toggleDepartmentSelection(departmentId: number, selected: boolean) {
+  const ids = new Set(selectedDepartmentIds.value);
+  if (selected) ids.add(departmentId);
+  else ids.delete(departmentId);
+  selectedDepartmentIds.value = [...ids];
 }
 
 async function initializePermissionProfiles() {
@@ -933,7 +1041,7 @@ async function loadDirectory() {
   if (permissionForm.targetType === "USER") {
     query.set("subjectId", String(profile.id));
     if (employeePermissionStatus.value !== "ALL") query.set("permissionStatus", employeePermissionStatus.value);
-  }
+  } else if (directoryCorpCode.value) query.set("corpCode", directoryCorpCode.value);
   const path = permissionForm.targetType === "USER" ? "employees" : "departments";
   try {
     const response = await fetch(`/api/admin/directory/${path}?${query}`, { credentials: "include" });
@@ -959,13 +1067,15 @@ function openPermissionEditor(targetType: "USER" | "DEPARTMENT") {
   permissionForm.targetType = targetType;
   permissionForm.subjectName = profile.subjectName;
   directoryKeyword.value = "";
+  directoryCorpCode.value = "";
   directoryPageNum.value = 1;
   employeePermissionStatus.value = "ALL";
   selectedDepartmentIds.value = profile.departments.map((department) => department.id);
   Object.keys(employeeEnabledDraft).forEach((key) => delete employeeEnabledDraft[Number(key)]);
   Object.keys(loadedDirectoryEmployees).forEach((key) => delete loadedDirectoryEmployees[Number(key)]);
   permissionDialogVisible.value = true;
-  void loadDirectory();
+  if (targetType === "DEPARTMENT") void Promise.all([loadDirectoryOrganizations(), loadDirectory()]);
+  else void loadDirectory();
 }
 
 function inheritedEmployeeEnabled(employee: DingEmployee) {
@@ -1090,12 +1200,25 @@ provide(financeLayoutKey, {
         </RouterLink>
       </nav>
 
-      <div class="finance-profile" aria-label="当前登录账号">
-        <span>{{ profileDisplayName.slice(0, 1) }}</span>
-        <div><strong>{{ profileDisplayName }}</strong></div>
-        <button type="button" title="修改我的密码" aria-label="修改我的密码" @click="changePasswordVisible = true"><el-icon><Setting /></el-icon></button>
-        <button type="button" title="退出登录" aria-label="退出登录" @click="logout"><el-icon><SwitchButton /></el-icon></button>
-      </div>
+      <el-popover
+        v-model:visible="profileMenuVisible"
+        placement="top-start"
+        trigger="click"
+        :width="210"
+        popper-class="finance-profile-popover"
+      >
+        <template #reference>
+          <button type="button" class="finance-profile" aria-label="当前登录账号" :aria-expanded="profileMenuVisible">
+            <span>{{ profileDisplayName.slice(0, 1) }}</span>
+            <div><strong>{{ profileDisplayName }}</strong></div>
+            <span class="finance-profile-chevron" aria-label="展开账号菜单"><el-icon><ArrowUp /></el-icon></span>
+          </button>
+        </template>
+        <div class="finance-profile-menu" aria-label="账号操作菜单">
+          <button type="button" @click="openChangePasswordFromProfile"><el-icon><Lock /></el-icon>修改密码</button>
+          <button type="button" class="danger" @click="logoutFromProfile"><el-icon><SwitchButton /></el-icon>退出登录</button>
+        </div>
+      </el-popover>
     </aside>
 
     <section class="workspace">
@@ -1207,6 +1330,12 @@ provide(financeLayoutKey, {
         <header>
           <div><strong>{{ permissionForm.subjectName }}</strong><p>{{ permissionForm.targetType === 'USER' ? '开关展示最终权限，个人设置优先于部门授权' : '从通讯录部门中选择，无需手工填写部门 ID' }}</p></div>
           <div class="directory-search-actions">
+            <div v-if="permissionForm.targetType === 'DEPARTMENT'" class="directory-organization-filter" aria-label="部门企业筛选">
+              <el-select v-model="directoryCorpCode" placeholder="全部企业" @change="changeDirectoryOrganization">
+                <el-option label="全部企业" value="" />
+                <el-option v-for="organization in directoryOrganizations" :key="organization.corpCode" :label="organization.corpName || organization.corpCode" :value="organization.corpCode" />
+              </el-select>
+            </div>
             <el-input v-model="directoryKeyword" clearable :placeholder="permissionForm.targetType === 'USER' ? '搜索姓名、工号、部门或手机号' : '搜索部门名称'" :prefix-icon="Search" @keyup.enter="searchDirectory" />
             <el-button type="primary" :icon="Search" @click="searchDirectory">搜索</el-button>
             <el-button @click="resetDirectorySearch">重置</el-button>
@@ -1232,9 +1361,41 @@ provide(financeLayoutKey, {
             </template>
           </el-table-column>
         </el-table>
-        <el-table v-else v-loading="directoryLoading" :data="directoryDepartments" height="360">
+        <el-table v-else v-loading="directoryLoading" :data="directoryDepartments" height="360" @expand-change="handleDepartmentExpand">
           <el-table-column width="70">
-            <template #default="{ row }"><el-checkbox v-model="selectedDepartmentIds" :value="row.id" /></template>
+            <template #default="{ row }"><el-checkbox :model-value="selectedDepartmentIds.includes(row.id)" @change="toggleDepartmentSelection(row.id, Boolean($event))" /></template>
+          </el-table-column>
+          <el-table-column type="expand" width="52">
+            <template #default="{ row }">
+              <section class="department-member-panel">
+                <el-alert v-if="departmentMemberPage(row).error" type="error" :closable="false" :title="departmentMemberPage(row).error">
+                  <template #default><el-button link type="primary" @click="loadDepartmentMembers(row, true)">重新加载</el-button></template>
+                </el-alert>
+                <el-table
+                  v-else
+                  v-loading="departmentMemberPage(row).loading"
+                  :data="departmentMemberPage(row).records"
+                  empty-text="该部门暂无在职员工"
+                  size="small"
+                >
+                  <el-table-column prop="employeeName" label="姓名" min-width="110" />
+                  <el-table-column prop="employeeNo" label="工号" min-width="120" />
+                  <el-table-column prop="departmentName" label="部门" min-width="150" />
+                  <el-table-column prop="mobile" label="手机号" min-width="140" />
+                </el-table>
+                <el-pagination
+                  v-model:current-page="departmentMemberPage(row).pageNum"
+                  v-model:page-size="departmentMemberPage(row).pageSize"
+                  :aria-label="`${row.departmentName}成员分页`"
+                  :total="departmentMemberPage(row).total"
+                  :page-sizes="[10,20,50,100]"
+                  layout="total, sizes, prev, pager, next"
+                  size="small"
+                  @current-change="loadDepartmentMembers(row, true)"
+                  @size-change="departmentMemberPage(row).pageNum = 1; loadDepartmentMembers(row, true)"
+                />
+              </section>
+            </template>
           </el-table-column>
           <el-table-column label="所属企业" min-width="180"><template #default="{ row }">{{ row.corpName || row.corpCode || '历史企业' }}</template></el-table-column>
           <el-table-column prop="departmentName" label="部门名称" min-width="240" />

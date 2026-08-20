@@ -5,12 +5,14 @@ import com.saibao.invoice.domain.DingEmployee;
 import com.saibao.invoice.domain.DingDirectorySyncLog;
 import com.saibao.invoice.dto.DepartmentDirectoryPageQueryDTO;
 import com.saibao.invoice.dto.EmployeeDirectoryPageQueryDTO;
+import com.saibao.invoice.vo.DingOrganizationVO;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
 /** 钉钉通讯录部门与员工查询持久化接口。 */
 public interface DingDirectoryMapper {
+    List<DingOrganizationVO> selectOrganizations();
     long countEmployees(EmployeeDirectoryPageQueryDTO query);
     List<DingEmployee> selectEmployeePage(EmployeeDirectoryPageQueryDTO query);
     DingEmployee selectEmployeeByIdentity(@Param("corpCode") String corpCode,

@@ -11,9 +11,12 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 @Schema(description = "钉钉员工目录分页查询条件")
 public class EmployeeDirectoryPageQueryDTO extends PageQueryDTO {
+    @Schema(description = "企业业务编码；为空时查询全部企业", example = "sebo")
+    private String corpCode;
+
     @Schema(description = "姓名、工号、部门名称或手机号模糊关键字")
     private String keyword;
-    @Schema(description = "部门目录主键 ID；为空时查询全部部门")
+    @Schema(description = "部门目录主键 ID；传入后按员工的直接任职部门查询，为空时查询全部部门", example = "1")
     private Long departmentId;
 
     @Positive

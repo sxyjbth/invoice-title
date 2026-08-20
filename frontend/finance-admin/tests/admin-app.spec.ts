@@ -79,6 +79,27 @@ describe("财务端发票抬头管理", () => {
     expect(profile.find("small").exists()).toBe(false);
   });
 
+  it("左下角整行账号入口向上展开修改密码和退出登录菜单", async () => {
+    const wrapper = await mountAdmin(true);
+    const profile = wrapper.get('[aria-label="当前登录账号"]');
+
+    expect(profile.element.tagName).toBe("BUTTON");
+    expect(profile.find('[aria-label="展开账号菜单"] svg').exists()).toBe(true);
+    expect(profile.find('[aria-label="修改我的密码"]').exists()).toBe(false);
+    expect(profile.find('[aria-label="退出登录"]').exists()).toBe(false);
+
+    await profile.trigger("click");
+    await nextTick();
+    expect(document.body.textContent).toContain("修改密码");
+    expect(document.body.textContent).toContain("退出登录");
+
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.includes("修改密码"))!.click();
+    await nextTick();
+    expect(document.body.textContent).toContain("修改我的密码");
+    wrapper.unmount();
+  });
+
   it("抬头管理不展示统计卡片，只保留状态筛选", async () => {
     const wrapper = await mountAdmin();
 
@@ -418,6 +439,71 @@ describe("财务端发票抬头管理", () => {
     await nextTick();
     expect(document.body.textContent).toContain("从通讯录部门中选择");
     expect(document.body.textContent).not.toContain("请输入部门名称");
+    wrapper.unmount();
+  });
+
+  it("员工与部门授权搜索框缩小为原布局约一半并保留右侧操作按钮", () => {
+    expect(adminStyles).toContain(".directory-search-actions .el-input { width: 240px;");
+    expect(adminStyles).toContain(".directory-search-actions { display: flex;");
+  });
+
+  it("部门授权支持企业筛选并按部门懒加载分页展示在职成员", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/admin/directory/organizations")) {
+        return new Response(JSON.stringify([
+          { corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司" },
+          { corpCode: "walden", corpName: "瓦尔登环境科学研究院（北京）有限公司" },
+        ]), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/departments")) {
+        return new Response(JSON.stringify({ records: [{
+          id: 11,
+          corpCode: "sebo",
+          corpName: "赛宝绿创能源技术（上海）有限公司",
+          dingDepartmentId: "ding-dept-platform",
+          departmentName: "平台开发部",
+          employeeCount: 1,
+        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/employees")) {
+        return new Response(JSON.stringify({ records: [{
+          id: 101,
+          corpCode: "sebo",
+          corpName: "赛宝绿创能源技术（上海）有限公司",
+          dingUserId: "ding-employee-sun",
+          employeeNo: "R04952",
+          employeeName: "孙鑫尧",
+          departmentId: 11,
+          departmentName: "平台开发部",
+          mobile: "13936725713",
+        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
+    await permissionPage.findAll("button").find((item) => item.text().includes("编辑")
+      && item.element.closest(".permission-level-row")?.textContent?.includes("部门授权"))!.trigger("click");
+    await flushPromises();
+
+    expect(document.body.querySelector('[aria-label="部门企业筛选"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("全部企业");
+    expect(document.body.querySelector(".el-table__expand-icon")).not.toBeNull();
+
+    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
+    await flushPromises();
+    expect(document.body.textContent).toContain("孙鑫尧");
+    expect(document.body.textContent).toContain("R04952");
+    expect(document.body.textContent).toContain("13936725713");
+    expect(document.body.querySelector('[aria-label="平台开发部成员分页"]')).not.toBeNull();
+    expect(request.mock.calls.some(([url]) => {
+      const parsed = new URL(String(url), "http://localhost");
+      return parsed.pathname.endsWith("/directory/employees")
+        && parsed.searchParams.get("corpCode") === "sebo"
+        && parsed.searchParams.get("departmentId") === "11";
+    })).toBe(true);
     wrapper.unmount();
   });
 

@@ -8,17 +8,24 @@ import com.saibao.invoice.mapper.DingDirectoryMapper;
 import com.saibao.invoice.service.IDingDirectoryService;
 import com.saibao.invoice.vo.DingDepartmentVO;
 import com.saibao.invoice.vo.DingEmployeeVO;
+import com.saibao.invoice.vo.DingOrganizationVO;
 import com.saibao.invoice.vo.PageResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
+import java.util.List;
 
 /** 基于本地钉钉同步目录的分页查询实现。 */
 @Service
 @RequiredArgsConstructor
 public class DingDirectoryServiceImpl implements IDingDirectoryService {
     private final DingDirectoryMapper mapper;
+
+    @Override
+    public List<DingOrganizationVO> listOrganizations() {
+        return mapper.selectOrganizations();
+    }
 
     @Override
     public PageResult<DingEmployeeVO> pageEmployees(EmployeeDirectoryPageQueryDTO query) {

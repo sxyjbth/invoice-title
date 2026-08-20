@@ -52,7 +52,6 @@ async function submitLogin() {
         <h1>发票抬头管理</h1>
         <p>集中维护企业抬头、展示主体和员工查看权限，让每一次开票信息都准确、可追溯。</p>
       </div>
-      <div class="brand-footer">赛宝卓越 · 财务管理平台</div>
     </section>
 
     <section class="login-panel">
@@ -86,7 +85,6 @@ async function submitLogin() {
 .eyebrow { margin: 0 0 12px; font-size: 12px; letter-spacing: 3px; color: #8ebeff; }
 h1 { margin: 0; font-size: clamp(36px, 4vw, 56px); letter-spacing: -2px; }
 .brand-panel p:not(.eyebrow) { max-width: 520px; font-size: 17px; line-height: 1.9; color: #c7dbf8; }
-.brand-footer { position: absolute; left: 10%; bottom: 48px; color: #87a8d3; font-size: 13px; }
 .login-panel { display: grid; place-items: center; padding: 48px; }
 .login-card { width: min(420px, 100%); padding: 42px; border: 1px solid #e4eaf3; border-radius: 22px; background: white; box-shadow: 0 24px 70px rgb(41 72 120 / 10%); }
 .mobile-brand { display: none; }

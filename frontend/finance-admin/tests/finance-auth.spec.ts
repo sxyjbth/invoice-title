@@ -39,6 +39,13 @@ afterEach(() => {
 });
 
 describe("财务端账号体系", () => {
+  it("登录页不再展示左下角平台归属文案", () => {
+    const wrapper = mount(FinanceLoginView, { global });
+
+    expect(wrapper.find(".brand-footer").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("赛宝卓越 · 财务管理平台");
+  });
+
   it("账号密码登录并明确忘记密码处理方式", () => {
     const wrapper = mount(FinanceLoginView, { global });
 
