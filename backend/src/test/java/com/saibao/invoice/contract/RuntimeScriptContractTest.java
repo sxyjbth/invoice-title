@@ -65,6 +65,20 @@ class RuntimeScriptContractTest {
                         "cp -a frontend/finance-admin/dist/. \"${staging_dir}/frontend/finance-admin/\""));
     }
 
+    @Test
+    void dockerPreparationMakesImportDirectoryWritableByBackendContainerUser() throws IOException {
+        String prepareTarget = readProjectFile("deploy", "docker", "prepare-target-server.sh");
+        String backendDockerfile = readProjectFile("deploy", "docker", "backend.Dockerfile");
+
+        assertThat(backendDockerfile)
+                .contains("useradd --uid 10001")
+                .contains("USER 10001:10001");
+        assertThat(prepareTarget)
+                .contains("BACKEND_UID=\"${INVOICE_BACKEND_UID:-10001}\"")
+                .contains("-o \"${BACKEND_UID}\" -g \"${APP_GROUP}\" -m 0770")
+                .contains("\"${DATA_HOME}/imports\"");
+    }
+
     private String readProjectFile(String... parts) throws IOException {
         Path backendRoot = Path.of("").toAbsolutePath();
         Path projectRoot = backendRoot.getParent();

@@ -11,13 +11,13 @@ import com.saibao.invoice.mapper.InvoiceSubjectMapper;
 import com.saibao.invoice.mapper.InvoiceTitleMapper;
 import com.saibao.invoice.mapper.InvoiceTitleVersionMapper;
 import com.saibao.invoice.service.IInvoiceTitleService;
+import com.saibao.invoice.util.BusinessTime;
 import com.saibao.invoice.vo.InvoiceTitleVO;
 import com.saibao.invoice.vo.PageResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -59,7 +59,7 @@ public class InvoiceTitleServiceImpl implements IInvoiceTitleService {
         InvoiceTitle title = new InvoiceTitle();
         applyRequest(title, request, subjects, operatorUserId);
         title.setCreatedBy(operatorUserId);
-        title.setCreatedAt(LocalDateTime.now());
+        title.setCreatedAt(BusinessTime.now());
         invoiceTitleMapper.insert(title);
         replaceSubjects(title.getId(), subjects, operatorUserId);
         createVersion(title, request.getSubjectIds(), "CREATE", operatorUserId);
@@ -146,7 +146,7 @@ public class InvoiceTitleServiceImpl implements IInvoiceTitleService {
         title.setSubjectNames(subjects.stream().map(InvoiceSubject::getSubjectName)
                 .reduce((left, right) -> left + "," + right).orElse(""));
         title.setUpdatedBy(operatorUserId);
-        title.setUpdatedAt(LocalDateTime.now());
+        title.setUpdatedAt(BusinessTime.now());
     }
 
     private void replaceSubjects(Long titleId, List<InvoiceSubject> subjects, String operatorUserId) {
@@ -169,7 +169,7 @@ public class InvoiceTitleServiceImpl implements IInvoiceTitleService {
         version.setBankAccount(title.getBankAccount());
         version.setSubjectIdsJson(new LinkedHashSet<>(subjectIds).toString());
         version.setCreatedBy(operatorUserId);
-        version.setCreatedAt(LocalDateTime.now());
+        version.setCreatedAt(BusinessTime.now());
         versionMapper.insert(version);
         if ("PUBLISHED".equals(title.getStatus())) {
             invoiceTitleMapper.updateCurrentPublishedVersion(title.getId(), version.getId(), operatorUserId);

@@ -2,6 +2,7 @@
 import { inject } from "vue";
 import { Plus, Search, Upload } from "@element-plus/icons-vue";
 import { financeLayoutKey } from "../layouts/finance-layout-context";
+import { formatDateTime } from "../utils/date";
 
 const {
   activeStatus,
@@ -48,7 +49,7 @@ const {
               <td class="tax-id">{{ title.taxpayerId }}</td>
               <td><span v-for="subject in title.subjects" :key="subject" class="subject-tag">{{ subject }}</span></td>
               <td><span class="status" :class="statusClass(title.status)"><i />{{ statusLabel(title.status) }}</span></td>
-              <td>{{ title.updatedAt }}<small>{{ title.updatedBy }}</small></td>
+              <td>{{ formatDateTime(title.updatedAt) }}<small>{{ title.updatedBy }}</small></td>
               <td class="row-actions"><el-button link type="primary" @click="openTitleEditor(title)">编辑</el-button></td>
             </tr>
             <tr v-if="filteredTitles.length === 0"><td class="empty-row" colspan="6">未找到符合条件的抬头</td></tr>

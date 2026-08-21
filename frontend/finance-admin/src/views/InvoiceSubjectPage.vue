@@ -2,6 +2,7 @@
 import { inject } from "vue";
 import { Plus, Search } from "@element-plus/icons-vue";
 import { financeLayoutKey } from "../layouts/finance-layout-context";
+import { formatDateTime } from "../utils/date";
 
 const {
   changeSubjectStatus,
@@ -38,7 +39,7 @@ const {
             <tr v-for="subject in filteredSubjects" :key="subject.id">
               <td><strong>{{ subject.name }}</strong></td><td>{{ subject.boundTitleName || '未绑定' }}</td><td>{{ subject.employeeCount }} 人</td>
               <td><span class="status" :class="subject.status === 'ENABLED' ? 'status-published' : 'status-disabled'"><i />{{ subject.status === 'ENABLED' ? '启用' : '停用' }}</span></td>
-              <td>{{ subject.updatedAt }}<small>{{ subject.updatedBy }}</small></td>
+              <td>{{ formatDateTime(subject.updatedAt) }}<small>{{ subject.updatedBy }}</small></td>
               <td class="row-actions subject-actions-column"><el-button link type="primary" @click="openTitleBinding(subject)">绑定抬头</el-button><el-button link type="primary" @click="openSubjectEditor(subject)">编辑</el-button><el-button link :type="subject.status === 'ENABLED' ? 'danger' : 'success'" @click="changeSubjectStatus(subject)">{{ subject.status === 'ENABLED' ? '停用' : '启用' }}</el-button></td>
             </tr>
             <tr v-if="filteredSubjects.length === 0"><td class="empty-row" colspan="6">未找到符合条件的主体</td></tr>

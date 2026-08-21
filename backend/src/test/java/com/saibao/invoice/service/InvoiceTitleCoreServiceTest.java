@@ -11,7 +11,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.TimeZone;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -82,6 +85,30 @@ class InvoiceTitleCoreServiceTest {
         Long titleId = invoiceTitleService.create(request, "finance-test");
 
         assertThat(invoiceTitleService.getById(titleId).getSubjectIds()).isEmpty();
+    }
+
+    @Test
+    @Transactional
+    void draftUpdatedAtShouldUseShanghaiBusinessTimeWhenJvmRunsInUtc() {
+        TimeZone originalTimeZone = TimeZone.getDefault();
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+        try {
+            ZoneId businessZone = ZoneId.of("Asia/Shanghai");
+            LocalDateTime beforeCreate = LocalDateTime.now(businessZone).minusSeconds(1);
+            InvoiceTitleSaveDTO request = new InvoiceTitleSaveDTO();
+            request.setCompanyName("草稿更新时间测试有限公司");
+            request.setTaxpayerId("91330100DRAFTTIME001");
+            request.setSubjectIds(List.of());
+            request.setStatus(InvoiceTitleStatusEnum.DRAFT.getCode());
+
+            Long titleId = invoiceTitleService.create(request, "finance-test");
+
+            LocalDateTime afterCreate = LocalDateTime.now(businessZone).plusSeconds(1);
+            assertThat(invoiceTitleService.getById(titleId).getUpdatedAt())
+                    .isBetween(beforeCreate, afterCreate);
+        } finally {
+            TimeZone.setDefault(originalTimeZone);
+        }
     }
 
     @Test

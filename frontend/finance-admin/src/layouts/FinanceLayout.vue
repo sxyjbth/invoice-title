@@ -6,6 +6,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { type FinanceAccount } from "../components/FinanceAccountManagement.vue";
 import ChangePasswordDialog from "../components/ChangePasswordDialog.vue";
 import { buildPermissionSubjectQuery, loadPermissionProfiles } from "../utils/subject-query";
+import { formatDateTime } from "../utils/date";
 import { resolveApiUrl } from "../api-prefix";
 import { routeNameByMenu, routeNames, type FinanceMenuCode } from "../router";
 import { financeLayoutKey } from "./finance-layout-context";
@@ -491,7 +492,7 @@ async function loadTitleCounts() {
   }));
 }
 
-async function loadTitles() {
+async function loadTitles(silent = false) {
   if (testMode) return;
   const query = new URLSearchParams({ pageNum: String(pageNum.value), pageSize: String(pageSize.value) });
   if (keyword.value.trim()) query.set("keyword", keyword.value.trim());
@@ -502,7 +503,8 @@ async function loadTitles() {
     titles.value = result.records.map(toTitle);
     titleTotal.value = result.total;
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "抬头列表加载失败");
+    if (silent) throw error;
+    ElMessage.error(requestErrorMessage(error, "抬头列表加载失败"));
   }
 }
 
@@ -616,8 +618,33 @@ function statusClass(status: StatusCode) {
 }
 
 function openImportDialog() {
+  resetImportDialogState();
   importVisible.value = true;
   void loadImportHistory();
+}
+
+function clearImportFileSelection() {
+  importFile.value = null;
+  importFileName.value = "";
+  if (importFileInput.value) importFileInput.value.value = "";
+}
+
+function resetImportDialogState() {
+  clearImportFileSelection();
+  importErrorTaskId.value = null;
+  importRowErrors.value = [];
+}
+
+function closeImportDialog() {
+  resetImportDialogState();
+  importVisible.value = false;
+}
+
+function requestErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof TypeError && /failed to fetch|networkerror|network request failed/i.test(error.message)) {
+    return "无法连接导入服务，请确认后端服务正常后重试";
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function chooseImportFile() {
@@ -631,7 +658,7 @@ function handleImportFileChange(event: Event) {
   importFileName.value = file?.name ?? "";
 }
 
-async function loadImportHistory() {
+async function loadImportHistory(silent = false) {
   if (import.meta.env.MODE === "test") return;
   try {
     const response = await fetch(`/api/admin/invoice-imports?pageNum=${importHistoryPageNum.value}&pageSize=${importHistoryPageSize.value}`);
@@ -639,7 +666,8 @@ async function loadImportHistory() {
     const result = await response.json() as { records: ImportHistory[]; total: number };
     importHistory.value = result.records;
     importHistoryTotal.value = result.total;
-  } catch {
+  } catch (error) {
+    if (silent) throw error;
     // 原型独立打开时保留真实演示数据；联调环境由 Vite 代理读取后端分页接口。
   }
 }
@@ -655,7 +683,7 @@ async function loadImportErrors(taskId: number) {
     return result.records;
   } catch (error) {
     importRowErrors.value = [];
-    ElMessage.error(error instanceof Error ? error.message : "导入失败原因加载失败");
+    ElMessage.error(requestErrorMessage(error, "导入失败原因加载失败"));
     return [];
   } finally {
     importErrorsLoading.value = false;
@@ -679,10 +707,7 @@ async function submitImport() {
       body,
     });
     const result = await readApi<ImportHistory>(response, "导入请求失败");
-    await Promise.all([loadImportHistory(), loadTitles(), loadTitleCounts()]);
-    importFile.value = null;
-    importFileName.value = "";
-    if (importFileInput.value) importFileInput.value.value = "";
+    clearImportFileSelection();
     if (result.failureCount > 0) {
       const errors = await loadImportErrors(result.id);
       const firstReason = errors[0] ? `第 ${errors[0].rowNo} 行，${errors[0].errorMessage}` : `共有 ${result.failureCount} 条数据校验失败`;
@@ -692,8 +717,18 @@ async function submitImport() {
       importRowErrors.value = [];
       ElMessage.success(`导入完成：成功 ${result.successCount} 条；数据已生成草稿`);
     }
+
+    // 导入业务结果已经由 POST 确认，后续列表刷新失败不能覆盖成“导入请求失败”。
+    const refreshResults = await Promise.allSettled([
+      loadImportHistory(true),
+      loadTitles(true),
+      loadTitleCounts(),
+    ]);
+    if (refreshResults.some((item) => item.status === "rejected")) {
+      ElMessage.warning("导入结果已保存，但页面数据刷新失败，请稍后重试");
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "导入失败，请检查后端服务和 Excel 内容");
+    ElMessage.error(requestErrorMessage(error, "导入失败，请检查后端服务和 Excel 内容"));
   } finally {
     importSubmitting.value = false;
   }
@@ -1249,7 +1284,7 @@ provide(financeLayoutKey, {
 
     </section>
 
-    <el-dialog v-model="importVisible" title="批量导入抬头" width="620px">
+    <el-dialog v-model="importVisible" title="批量导入抬头" width="620px" @close="resetImportDialogState">
       <el-tabs>
         <el-tab-pane label="上传文件">
           <div class="upload-zone" @click="chooseImportFile">
@@ -1274,7 +1309,7 @@ provide(financeLayoutKey, {
         </el-tab-pane>
         <el-tab-pane label="导入历史">
           <div v-for="task in importHistory" :key="task.id" class="history-row">
-            <span>{{ task.createdAt }} · {{ task.createdBy }}<small>{{ task.originalFileName }} · {{ task.taskNo }}</small></span>
+            <span>{{ formatDateTime(task.createdAt) }} · {{ task.createdBy }}<small>{{ task.originalFileName }} · {{ task.taskNo }}</small></span>
             <div class="history-result">
               <strong>成功 {{ task.successCount }}，失败 {{ task.failureCount }}</strong>
               <el-button v-if="task.failureCount" link type="danger" :loading="importErrorsLoading && importErrorTaskId === task.id" @click="loadImportErrors(task.id)">查看失败原因</el-button>
@@ -1305,13 +1340,13 @@ provide(financeLayoutKey, {
         </el-tab-pane>
       </el-tabs>
       <template #footer>
-        <el-button @click="importVisible = false">取消</el-button>
+        <el-button @click="closeImportDialog">取消</el-button>
         <el-button type="primary" :disabled="!importFileName" :loading="importSubmitting" @click="submitImport">校验并导入</el-button>
       </template>
     </el-dialog>
 
     <el-dialog v-model="createVisible" :title="editingTitleId ? '编辑发票抬头' : '新增发票抬头'" width="720px">
-      <el-form :model="titleForm" label-position="top">
+      <el-form :model="titleForm" label-position="top" :show-message="false">
         <div class="form-grid">
           <el-form-item label="公司名称" prop="companyName" required><el-input v-model="titleForm.companyName" placeholder="请输入完整公司名称" maxlength="200" @input="titleFormErrors.companyName = ''" /><span v-if="titleFormErrors.companyName" class="el-form-item__error">{{ titleFormErrors.companyName }}</span></el-form-item>
           <el-form-item label="纳税人识别号" prop="taxpayerId" required><el-input v-model="titleForm.taxpayerId" placeholder="请输入15-20位大写字母或数字" maxlength="20" @input="titleFormErrors.taxpayerId = ''" /><span v-if="titleFormErrors.taxpayerId" class="el-form-item__error">{{ titleFormErrors.taxpayerId }}</span></el-form-item>

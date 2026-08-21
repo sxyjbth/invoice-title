@@ -15,6 +15,7 @@ import com.saibao.invoice.mapper.InvoiceTitleMapper;
 import com.saibao.invoice.mapper.InvoiceTitleVersionMapper;
 import com.saibao.invoice.mapper.OperationLogMapper;
 import com.saibao.invoice.service.IInvoiceImportService;
+import com.saibao.invoice.util.BusinessTime;
 import com.saibao.invoice.vo.ImportRowErrorVO;
 import com.saibao.invoice.vo.ImportTaskVO;
 import com.saibao.invoice.vo.PageResult;
@@ -90,7 +91,7 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
     @Transactional
     public ImportTaskVO importWorkbook(MultipartFile file, String operatorUserId, String operatorName) {
         validateFile(file);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = BusinessTime.now();
         String taskNo = createTaskNo(now);
         String safeFileName = sanitizeFileName(file.getOriginalFilename());
         Path storedFile = storeFile(file, taskNo, safeFileName);
@@ -263,7 +264,7 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
     }
 
     private void createDraft(Map<String, String> values, String operatorUserId) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = BusinessTime.now();
         InvoiceTitle title = new InvoiceTitle();
         title.setCompanyName(values.get("公司名称"));
         title.setTaxpayerId(values.get("纳税人识别号"));
@@ -305,12 +306,12 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
         error.setErrorCode(code);
         error.setErrorMessage(message);
         error.setRawDataJson(toJson(values));
-        error.setCreatedAt(LocalDateTime.now());
+        error.setCreatedAt(BusinessTime.now());
         importTaskMapper.insertRowError(error);
     }
 
     private void finishTask(InvoiceImportTask task, int total, int success, int failure, String status) {
-        LocalDateTime finishedAt = LocalDateTime.now();
+        LocalDateTime finishedAt = BusinessTime.now();
         importTaskMapper.updateResult(task.getId(), status, total, success, failure, finishedAt);
         task.setStatus(status);
         task.setTotalCount(total);
@@ -330,7 +331,7 @@ public class InvoiceImportServiceImpl implements IInvoiceImportService {
         log.setOperatorUserId(operatorUserId);
         log.setOperatorName(operatorName);
         log.setClientIp(null);
-        log.setCreatedAt(LocalDateTime.now());
+        log.setCreatedAt(BusinessTime.now());
         operationLogMapper.insert(log);
     }
 

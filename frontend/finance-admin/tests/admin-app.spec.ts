@@ -180,12 +180,22 @@ describe("财务端发票抬头管理", () => {
     await wrapper.findAll("button").find((item) => item.text().includes("新增抬头"))!.trigger("click");
     await nextTick();
 
+    const requiredInputs = Array.from(document.body.querySelectorAll<HTMLInputElement>(".el-dialog input")).slice(0, 2);
+    requiredInputs.forEach((input) => input.dispatchEvent(new FocusEvent("blur", { bubbles: true })));
+    await flushPromises();
+
+    const titleForm = wrapper.findAllComponents({ name: "ElForm" }).at(-1)!;
+    expect(titleForm.props("showMessage")).toBe(false);
+
     Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
       .find((button) => button.textContent?.includes("保存草稿"))!.click();
     await flushPromises();
 
     expect(document.body.textContent).toContain("公司名称不能为空");
     expect(document.body.textContent).toContain("纳税人识别号不能为空");
+    expect(document.body.textContent?.match(/公司名称不能为空/g)).toHaveLength(1);
+    expect(document.body.textContent?.match(/纳税人识别号不能为空/g)).toHaveLength(1);
+    expect(document.body.textContent).not.toContain("is required");
     expect(request).not.toHaveBeenCalled();
     wrapper.unmount();
   });
@@ -744,6 +754,54 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
+  it("导入历史统一显示不带 T 和毫秒的时间", async () => {
+    const wrapper = await mountAdmin(true);
+    await wrapper.get('[data-testid="batch-import"]').trigger("click");
+    layoutVm(wrapper).importHistory = [{
+      id: 18,
+      taskNo: "IMP20260821111442AB94",
+      originalFileName: "发票抬头导入1.xlsx",
+      status: "COMPLETED",
+      totalCount: 1,
+      successCount: 1,
+      failureCount: 0,
+      createdBy: "admin",
+      createdAt: "2026-08-21T11:14:42.717",
+    }];
+    await nextTick();
+
+    expect(document.body.textContent).toContain("2026-08-21 11:14:42 · admin");
+    expect(document.body.textContent).not.toContain("2026-08-21T11:14:42.717");
+    wrapper.unmount();
+  });
+
+  it("关闭批量导入弹窗后清空已选择文件，再次打开不残留文件名", async () => {
+    const wrapper = await mountAdmin(true);
+    await wrapper.get('[data-testid="batch-import"]').trigger("click");
+    await nextTick();
+
+    const fileInput = document.body.querySelector<HTMLInputElement>('input[type="file"][accept=".xlsx"]')!;
+    const selectedFile = new File(["xlsx"], "上一次选择的抬头.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [selectedFile] });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    await nextTick();
+    expect(document.body.textContent).toContain("上一次选择的抬头.xlsx");
+
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.trim() === "取消")!
+      .click();
+    await nextTick();
+    expect(layoutVm(wrapper).importFile).toBeNull();
+
+    await wrapper.get('[data-testid="batch-import"]').trigger("click");
+    await nextTick();
+    expect(document.body.textContent).toContain("点击选择 Excel 文件");
+    expect(document.body.textContent).not.toContain("上一次选择的抬头.xlsx");
+    wrapper.unmount();
+  });
+
   it("批量导入提交当前文件并使用登录账号，成功后刷新抬头数据", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       id: 1, taskNo: "IMP-1", status: "COMPLETED", totalCount: 1, successCount: 1, failureCount: 0,
@@ -804,6 +862,64 @@ describe("财务端发票抬头管理", () => {
 
     expect(request.mock.calls.some(([url]) => String(url).includes("taskId=9"))).toBe(true);
     expect(document.body.textContent).toContain("导入失败：第 2 行，纳税人识别号已存在或在当前文件中重复");
+    wrapper.unmount();
+  });
+
+  it("批量导入已返回业务失败时不被后续列表刷新异常覆盖", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/admin/invoice-imports" && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          id: 12,
+          taskNo: "IMP-FAILED-12",
+          status: "FAILED",
+          totalCount: 1,
+          successCount: 0,
+          failureCount: 1,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/invoice-imports/errors")) {
+        return new Response(JSON.stringify({
+          records: [{
+            id: 121,
+            rowNo: 2,
+            taxpayerId: "A1111111111111111111",
+            errorCode: "DUPLICATE_TAXPAYER_ID",
+            errorMessage: "纳税人识别号已存在或在当前文件中重复",
+          }],
+          total: 1,
+          pageNum: 1,
+          pageSize: 100,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      throw new TypeError("Failed to fetch");
+    });
+    const wrapper = await mountAdmin(true);
+    layoutVm(wrapper).importFile = new File(["xlsx"], "titles.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    await layoutVm(wrapper).submitImport();
+    await flushPromises();
+
+    expect(document.body.textContent).toContain("导入失败：第 2 行，纳税人识别号已存在或在当前文件中重复");
+    expect(document.body.textContent).not.toContain("导入请求失败");
+    expect(document.body.textContent).not.toContain("Failed to fetch");
+    wrapper.unmount();
+  });
+
+  it("批量导入网络不可用时显示明确中文提示而不暴露 Failed to fetch", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
+    const wrapper = await mountAdmin(true);
+    layoutVm(wrapper).importFile = new File(["xlsx"], "titles.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    await layoutVm(wrapper).submitImport();
+    await flushPromises();
+
+    expect(document.body.textContent).toContain("无法连接导入服务，请确认后端服务正常后重试");
+    expect(document.body.textContent).not.toContain("Failed to fetch");
     wrapper.unmount();
   });
 });

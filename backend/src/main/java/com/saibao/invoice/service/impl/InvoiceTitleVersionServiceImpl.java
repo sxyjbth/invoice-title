@@ -4,6 +4,7 @@ import com.saibao.invoice.domain.InvoiceTitleVersion;
 import com.saibao.invoice.enums.InvoiceTitleStatusEnum;
 import com.saibao.invoice.mapper.InvoiceTitleVersionMapper;
 import com.saibao.invoice.service.IInvoiceTitleVersionService;
+import com.saibao.invoice.util.BusinessTime;
 import com.saibao.invoice.vo.InvoiceTitleVersionVO;
 import com.saibao.invoice.vo.PageResult;
 import com.saibao.invoice.dto.PageQueryDTO;
@@ -11,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 
@@ -42,7 +42,7 @@ public class InvoiceTitleVersionServiceImpl implements IInvoiceTitleVersionServi
         draft.setBankName(source.getBankName());
         draft.setBankAccount(source.getBankAccount());
         draft.setCreatedBy(operatorUserId);
-        draft.setCreatedAt(LocalDateTime.now());
+        draft.setCreatedAt(BusinessTime.now());
         versionMapper.insert(draft);
         return draft.getId();
     }

@@ -6,6 +6,8 @@ APP_HOME="/opt/invoice-title"
 DATA_HOME="/data/invoice-title"
 APP_USER="invoice_title"
 APP_GROUP="invoice_title"
+# 后端镜像使用固定 UID 10001 运行；宿主机绑定目录必须对该 UID 可写。
+BACKEND_UID="${INVOICE_BACKEND_UID:-10001}"
 DB_NAME="invoice_title"
 DB_USER="invoice_title_app"
 MYSQL_CONTAINER="sebo-meal-mysql"
@@ -33,7 +35,10 @@ fi
 install -d -o root -g "${APP_GROUP}" -m 0750 \
     "${APP_HOME}" "${APP_HOME}/app" "${APP_HOME}/config" "${APP_HOME}/source"
 install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 0750 \
-    "${DATA_HOME}" "${DATA_HOME}/imports" "${DATA_HOME}/backups"
+    "${DATA_HOME}" "${DATA_HOME}/backups"
+# 目录所有者与容器运行 UID 对齐；组保留为宿主机专用账号，便于运维和备份。
+install -d -o "${BACKEND_UID}" -g "${APP_GROUP}" -m 0770 \
+    "${DATA_HOME}/imports"
 
 docker exec -i "${MYSQL_CONTAINER}" sh -c \
     'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" exec mysql --default-character-set=utf8mb4 -uroot' <<SQL
