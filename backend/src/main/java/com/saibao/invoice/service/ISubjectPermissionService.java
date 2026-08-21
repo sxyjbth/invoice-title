@@ -14,4 +14,7 @@ public interface ISubjectPermissionService {
     void changeStatus(Long id, String status, String operatorUserId);
     SubjectPermissionProfileVO getProfile(Long subjectId);
     SubjectPermissionProfileVO saveProfile(Long subjectId, SubjectPermissionProfileSaveDTO request, String operatorUserId);
+    SubjectPermissionProfileVO updateAllEmployeeVisible(Long subjectId,
+                                                        boolean allEmployeeVisible,
+                                                        String operatorUserId);
 }

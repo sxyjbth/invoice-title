@@ -160,8 +160,8 @@ const initialTitles: InvoiceTitle[] = [
     bankAccount: "86041110000957180",
     registeredAddress: "浙江省杭州市钱塘区临江街道纬五路3688号临江科创园6号楼12楼",
     phone: "4008696096",
-    subjects: ["杭州主体", "华东主体"],
-    subjectIds: [1, 4],
+    subjects: ["杭州主体"],
+    subjectIds: [1],
     status: "PUBLISHED",
     updatedAt: "2026-08-07 15:46",
     updatedBy: "王财务",
@@ -205,6 +205,8 @@ const subjects = ref<InvoiceSubject[]>([
   { id: 3, code: "SH", name: "上海主体", status: "ENABLED", employeeCount: 68, boundTitleId: 3, boundTitleName: "上海赛宝技术服务有限公司", updatedAt: "2026-08-03 14:10", updatedBy: "王财务", sortNo: 30 },
   { id: 4, code: "EAST", name: "华东主体", status: "ENABLED", employeeCount: 40, updatedAt: "2026-07-29 09:35", updatedBy: "王财务", sortNo: 40 },
 ]);
+const titleSubjectOptions = ref<InvoiceSubject[]>([...subjects.value]);
+const subjectTitleOptions = ref<InvoiceTitle[]>([...titles.value]);
 
 const permissions = ref<SubjectPermission[]>([
   { id: 1, subjectName: "杭州主体", targetType: "USER", targetName: "示例员工", targetId: "ding-employee-001", status: "ENABLED", source: "MANUAL", updatedAt: "2026-08-07 15:40" },
@@ -343,7 +345,7 @@ const titleForm = reactive({
   phone: "",
   bankName: "",
   bankAccount: "",
-  subjectIds: [] as number[],
+  subjectId: null as number | null,
   status: "DRAFT" as "DRAFT" | "PUBLISHED",
 });
 const taxpayerIdPattern = /^[0-9A-Z]{15,20}$/;
@@ -672,6 +674,48 @@ async function loadImportHistory(silent = false) {
   }
 }
 
+/** 抬头编辑使用独立全量主体数据，不继承主体管理列表的分页和筛选条件。 */
+async function loadTitleSubjectOptions() {
+  if (testMode) {
+    titleSubjectOptions.value = [...subjects.value];
+    return;
+  }
+  const options: InvoiceSubject[] = [];
+  const optionPageSize = 100;
+  let optionPageNum = 1;
+  let total = 0;
+  do {
+    const query = new URLSearchParams({ pageNum: String(optionPageNum), pageSize: String(optionPageSize) });
+    const response = await fetch(`/api/admin/subjects?${query}`, { credentials: "include" });
+    const result = await readApi<{ records: any[]; total: number }>(response, "绑定主体选项加载失败");
+    options.push(...result.records.map(toSubject));
+    total = result.total;
+    optionPageNum += 1;
+  } while (options.length < total);
+  titleSubjectOptions.value = options;
+}
+
+/** 主体换绑使用独立全量抬头数据，不继承抬头管理列表的分页和筛选条件。 */
+async function loadSubjectTitleOptions() {
+  if (testMode) {
+    subjectTitleOptions.value = [...titles.value];
+    return;
+  }
+  const options: InvoiceTitle[] = [];
+  const optionPageSize = 100;
+  let optionPageNum = 1;
+  let total = 0;
+  do {
+    const query = new URLSearchParams({ pageNum: String(optionPageNum), pageSize: String(optionPageSize) });
+    const response = await fetch(`/api/admin/invoice-titles?${query}`, { credentials: "include" });
+    const result = await readApi<{ records: any[]; total: number }>(response, "绑定抬头选项加载失败");
+    options.push(...result.records.map(toTitle));
+    total = result.total;
+    optionPageNum += 1;
+  } while (options.length < total);
+  subjectTitleOptions.value = options;
+}
+
 async function loadImportErrors(taskId: number) {
   importErrorTaskId.value = taskId;
   importErrorsLoading.value = true;
@@ -734,7 +778,7 @@ async function submitImport() {
   }
 }
 
-function resetCreateForm() {
+async function resetCreateForm() {
   editingTitleId.value = null;
   Object.assign(titleForm, {
     companyName: "",
@@ -743,10 +787,16 @@ function resetCreateForm() {
     phone: "",
     bankName: "",
     bankAccount: "",
-    subjectIds: [],
+    subjectId: null,
     status: "DRAFT",
   });
   clearTitleFormErrors();
+  try {
+    await loadTitleSubjectOptions();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "绑定主体选项加载失败");
+    return;
+  }
   createVisible.value = true;
 }
 
@@ -757,10 +807,13 @@ async function openTitleEditor(title: InvoiceTitle) {
     try {
       const response = await fetch(`/api/admin/invoice-titles/${title.id}`, { credentials: "include" });
       detail = toTitle(await readApi<any>(response, "抬头详情加载失败"));
+      await loadTitleSubjectOptions();
     } catch (error) {
       ElMessage.error(error instanceof Error ? error.message : "抬头详情加载失败");
       return;
     }
+  } else {
+    await loadTitleSubjectOptions();
   }
   Object.assign(titleForm, {
     companyName: detail.companyName,
@@ -769,7 +822,7 @@ async function openTitleEditor(title: InvoiceTitle) {
     phone: detail.phone ?? "",
     bankName: detail.bankName ?? "",
     bankAccount: detail.bankAccount ?? "",
-    subjectIds: [...detail.subjectIds],
+    subjectId: detail.subjectIds[0] ?? null,
     status: detail.status === "PUBLISHED" ? "PUBLISHED" : "DRAFT",
   });
   clearTitleFormErrors();
@@ -778,7 +831,7 @@ async function openTitleEditor(title: InvoiceTitle) {
 
 async function saveTitle(status: "DRAFT" | "PUBLISHED") {
   if (!validateTitleForm()) return;
-  const subjectIds = [...titleForm.subjectIds];
+  const subjectIds = titleForm.subjectId == null ? [] : [titleForm.subjectId];
   if (status === "PUBLISHED" && subjectIds.length === 0) {
     ElMessage.warning("保存并发布时请至少选择一个展示主体");
     return;
@@ -806,7 +859,9 @@ async function saveTitle(status: "DRAFT" | "PUBLISHED") {
     if (!response.ok) await readApi(response, "抬头保存失败");
     createVisible.value = false;
     ElMessage.success(editingTitleId.value ? "抬头已更新" : "抬头已新增");
-    if (!testMode) await Promise.all([loadTitles(), loadTitleCounts()]);
+    if (!testMode) {
+      await Promise.all([loadTitles(), loadTitleCounts(), loadSubjects(), loadTitleSubjectOptions(), loadSubjectTitleOptions()]);
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "抬头保存失败");
   } finally {
@@ -882,9 +937,15 @@ async function changeSubjectStatus(subject: InvoiceSubject) {
   }
 }
 
-function openTitleBinding(subject: InvoiceSubject) {
+async function openTitleBinding(subject: InvoiceSubject) {
   bindingSubject.value = subject;
   bindingTitleId.value = subject.boundTitleId ?? null;
+  try {
+    await loadSubjectTitleOptions();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "绑定抬头选项加载失败");
+    return;
+  }
   titleBindingVisible.value = true;
 }
 
@@ -905,12 +966,14 @@ async function saveTitleBinding() {
       }),
     });
     if (!response.ok) await readApi(response, "绑定抬头失败");
-    const selectedTitle = titles.value.find((title) => title.id === bindingTitleId.value);
+    const selectedTitle = subjectTitleOptions.value.find((title) => title.id === bindingTitleId.value);
     bindingSubject.value.boundTitleId = bindingTitleId.value;
     bindingSubject.value.boundTitleName = selectedTitle?.companyName ?? null;
     titleBindingVisible.value = false;
     ElMessage.success("抬头绑定成功");
-    if (!testMode) await Promise.all([loadSubjects(), loadTitles()]);
+    if (!testMode) {
+      await Promise.all([loadSubjects(), loadTitles(), loadTitleSubjectOptions(), loadSubjectTitleOptions()]);
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "绑定抬头失败");
   } finally {
@@ -1145,14 +1208,37 @@ function resolveEmployeeEnabled(employee: DingEmployee) {
   return explicitRule ? explicitRule.effect === "ALLOW" : inheritedEmployeeEnabled(employee);
 }
 
-function updateAllEmployeesVisibility(enabled: boolean) {
+async function updateAllEmployeesVisibility(enabled: boolean) {
   const profile = activePermissionProfile.value;
-  if (!profile) return;
+  if (!profile || permissionSaving.value) return;
+  const previousEnabled = profile.allEmployeesVisible;
+  const previousVisibleCount = profile.visibleCount;
+
+  // 先反馈用户点击结果；接口失败时恢复原状态。
   profile.allEmployeesVisible = enabled;
-  profile.visibleCount = enabled
-    ? 386
-    : profile.departments.reduce((total, department) => total + department.employeeCount, 0)
-      + profile.employeeRules.filter((rule) => rule.effect === "ALLOW").length;
+  permissionSaving.value = true;
+  try {
+    const response = await fetch(`/api/admin/subjects/${profile.id}/permission-profile/all-employee-visible`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ allEmployeeVisible: enabled }),
+    });
+    const result = await readApi<any>(response, "全员可见设置失败");
+    profile.subjectName = result.subjectName ?? profile.subjectName;
+    profile.allEmployeesVisible = Boolean(result.allEmployeeVisible);
+    profile.visibleCount = result.visibleCount ?? 0;
+    profile.departments = result.departments ?? [];
+    profile.employeeRules = result.employeeRules ?? [];
+    profile.employeeCount = profile.employeeRules.length;
+    ElMessage.success(`全员可见已${profile.allEmployeesVisible ? "开启" : "关闭"}`);
+  } catch (error) {
+    profile.allEmployeesVisible = previousEnabled;
+    profile.visibleCount = previousVisibleCount;
+    ElMessage.error(error instanceof Error ? error.message : "全员可见设置失败");
+  } finally {
+    permissionSaving.value = false;
+  }
 }
 
 async function savePermissionConfiguration(): Promise<boolean> {
@@ -1220,7 +1306,7 @@ provide(financeLayoutKey, {
   loadImportErrors, loadImportHistory, loadSubjects, loadTitles, openImportDialog, openPermissionEditor,
   openSubjectDialog, openSubjectEditor, openTitleBinding, openTitleEditor, pageNum, pageSize,
   permissionDialogVisible, permissionForm, permissionProfiles, permissionSaving, resetCreateForm,
-  resetDirectorySearch, savePermissionConfiguration, searchDirectory, searchFinanceAccounts,
+  resetDirectorySearch, searchDirectory, searchFinanceAccounts,
   selectPermissionProfile, selectedDepartmentIds, selectedPermissionProfileId, selectStatus,
   statusClass, statusLabel, statusOptions, subjectDialogVisible, subjectForm, subjectKeyword,
   subjectPageNum, subjectPageSize, subjectSaving, subjects, subjectStatus, switchMenu, titleBindingSaving,
@@ -1355,8 +1441,14 @@ provide(financeLayoutKey, {
           <el-form-item label="开户行"><el-input v-model="titleForm.bankName" placeholder="请输入开户银行" /></el-form-item>
           <el-form-item label="银行账号" prop="bankAccount"><el-input v-model="titleForm.bankAccount" placeholder="请输入8-32位数字" maxlength="32" @input="titleFormErrors.bankAccount = ''" /><span v-if="titleFormErrors.bankAccount" class="el-form-item__error">{{ titleFormErrors.bankAccount }}</span></el-form-item>
           <el-form-item label="展示主体（可后期选择）">
-            <el-select v-model="titleForm.subjectIds" multiple collapse-tags placeholder="可选择一个或多个主体">
-              <el-option v-for="subject in subjects.filter((item) => item.status === 'ENABLED')" :key="subject.id" :label="subject.name" :value="subject.id" />
+            <el-select v-model="titleForm.subjectId" clearable placeholder="可选择一个主体">
+              <el-option
+                v-for="subject in titleSubjectOptions"
+                :key="subject.id"
+                :label="subject.status !== 'ENABLED' ? `${subject.name}（已停用）` : subject.boundTitleId && subject.boundTitleId !== editingTitleId ? `${subject.name}（已绑定${subject.boundTitleName || '其他抬头'}）` : subject.name"
+                :value="subject.id"
+                :disabled="subject.status !== 'ENABLED' || Boolean(subject.boundTitleId && subject.boundTitleId !== editingTitleId)"
+              />
             </el-select>
           </el-form-item>
         </div>
@@ -1472,11 +1564,17 @@ provide(financeLayoutKey, {
     </el-dialog>
 
     <el-dialog v-model="titleBindingVisible" :title="bindingSubject ? `为${bindingSubject.name}绑定抬头` : '绑定抬头'" width="560px">
-      <el-alert title="一个主体只能绑定一个抬头，再次绑定将替换原关系。" type="info" :closable="false" />
+      <el-alert title="抬头与主体为一对一关系；再次绑定将替换主体和抬头两侧的原关系。" type="info" :closable="false" />
       <el-form label-position="top" class="binding-form">
         <el-form-item label="发票抬头" required>
           <el-select v-model="bindingTitleId" filterable placeholder="搜索并选择抬头公司名称" style="width: 100%">
-            <el-option v-for="title in titles.filter((item) => item.status !== 'DISABLED')" :key="title.id" :label="`${title.companyName}（${title.status === 'PUBLISHED' ? '已发布' : '草稿'}）`" :value="title.id" />
+            <el-option
+              v-for="title in subjectTitleOptions"
+              :key="title.id"
+              :label="`${title.companyName}（${title.status === 'PUBLISHED' ? '已发布' : title.status === 'DRAFT' ? '草稿' : '已停用'}）`"
+              :value="title.id"
+              :disabled="title.status === 'DISABLED'"
+            />
           </el-select>
         </el-form-item>
       </el-form>

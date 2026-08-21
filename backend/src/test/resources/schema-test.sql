@@ -94,7 +94,9 @@ CREATE TABLE invoice_title_subject (
     title_id BIGINT NOT NULL,
     subject_id BIGINT NOT NULL,
     created_by VARCHAR(100) NOT NULL DEFAULT 'test',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_invoice_title_subject_title UNIQUE (title_id),
+    CONSTRAINT uk_invoice_title_subject_subject UNIQUE (subject_id)
 );
 
 CREATE TABLE subject_permission (

@@ -35,10 +35,10 @@ public class InvoiceTitleVO {
     @Schema(description = "状态：DRAFT-草稿，PUBLISHED-已发布，DISABLED-已停用")
     private String status;
 
-    @Schema(description = "展示主体名称列表")
+    @Schema(description = "绑定主体名称列表；最多一个，未绑定时为空列表")
     private List<String> subjectNames;
 
-    @Schema(description = "展示主体 ID 列表，用于财务端编辑回显")
+    @Schema(description = "绑定主体 ID 列表；最多一个，用于财务端编辑回显")
     private List<Long> subjectIds;
 
     @Schema(description = "员工端展示的抬头最后发布时间；格式为 ISO 本地日期时间")

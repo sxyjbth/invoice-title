@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -17,6 +18,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -53,7 +55,7 @@ class FinanceAdministrationCrudWebTest {
                 {"companyName":"上线新增测试有限公司","taxpayerId":"91330100ONLINE0001",
                  "registeredAddress":"杭州市钱塘区测试路1号","phone":"0571-88888888",
                  "bankName":"宁波银行杭州分行","bankAccount":"001234567890",
-                 "subjectIds":[1],"status":"DRAFT"}
+                 "subjectIds":[],"status":"DRAFT"}
                 """);
         assertThat(created.statusCode()).isEqualTo(200);
         long titleId = Long.parseLong(created.body());
@@ -196,6 +198,36 @@ class FinanceAdministrationCrudWebTest {
     }
 
     @Test
+    void titleEndpointRejectsBindingMoreThanOneSubject() throws Exception {
+        HttpResponse<String> response = send(administrator, "POST", "/api/admin/invoice-titles", """
+                {"companyName":"一对一数量校验有限公司","taxpayerId":"91330100ONETOONE01",
+                 "subjectIds":[1,2],"status":"DRAFT"}
+                """);
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("一个发票抬头只能绑定一个主体");
+    }
+
+    @Test
+    void relationTableEnforcesOneToOneUniquenessOnBothForeignKeys() {
+        long titleId = 900001L;
+        long subjectId = 900001L;
+        jdbcTemplate.update("DELETE FROM invoice_title_subject WHERE title_id >= ? OR subject_id >= ?", titleId, subjectId);
+        try {
+            jdbcTemplate.update("INSERT INTO invoice_title_subject (title_id, subject_id) VALUES (?, ?)", titleId, subjectId);
+
+            assertThatThrownBy(() -> jdbcTemplate.update(
+                    "INSERT INTO invoice_title_subject (title_id, subject_id) VALUES (?, ?)", titleId, subjectId + 1))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+            assertThatThrownBy(() -> jdbcTemplate.update(
+                    "INSERT INTO invoice_title_subject (title_id, subject_id) VALUES (?, ?)", titleId + 1, subjectId))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        } finally {
+            jdbcTemplate.update("DELETE FROM invoice_title_subject WHERE title_id >= ? OR subject_id >= ?", titleId, subjectId);
+        }
+    }
+
+    @Test
     void rebindingShouldReplaceBothSidesOfTheOneToOneRelationship() throws Exception {
         long firstTitleId = Long.parseLong(send(administrator, "POST", "/api/admin/invoice-titles", """
                 {"companyName":"一对一旧抬头有限公司","taxpayerId":"91330100BINDOLD001",
@@ -315,6 +347,32 @@ class FinanceAdministrationCrudWebTest {
                 SELECT COUNT(*) FROM subject_permission
                 WHERE subject_id = 1 AND target_id IN ('ding-dept-tech', 'ding-employee-001', 'ding-employee-003')
                 """, Long.class)).isEqualTo(3L);
+    }
+
+    @Test
+    void allEmployeeVisiblePatchTakesEffectImmediatelyWithoutReplacingExistingRules() throws Exception {
+        HttpResponse<String> saved = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[1],
+                 "employeeRules":[{"employeeId":1,"effect":"DENY"},{"employeeId":3,"effect":"ALLOW"}]}
+                """);
+        assertThat(saved.statusCode()).isEqualTo(200);
+        var rulesBefore = jdbcTemplate.queryForList("""
+                SELECT target_type, target_corp_code, target_id, permission_effect
+                FROM subject_permission WHERE subject_id = 1 ORDER BY target_type, target_id
+                """);
+
+        HttpResponse<String> response = send(administrator, "PATCH",
+                "/api/admin/subjects/1/permission-profile/all-employee-visible",
+                "{\"allEmployeeVisible\":true}");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"allEmployeeVisible\":true", "\"visibleCount\":3");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT all_employee_visible FROM invoice_subject WHERE id = 1", Boolean.class)).isTrue();
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT target_type, target_corp_code, target_id, permission_effect
+                FROM subject_permission WHERE subject_id = 1 ORDER BY target_type, target_id
+                """)).isEqualTo(rulesBefore);
     }
 
     @Test

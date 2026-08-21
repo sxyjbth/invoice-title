@@ -119,6 +119,18 @@ public class SubjectPermissionServiceImpl implements ISubjectPermissionService {
         return getProfile(subjectId);
     }
 
+    @Override
+    @Transactional
+    public SubjectPermissionProfileVO updateAllEmployeeVisible(Long subjectId,
+                                                               boolean allEmployeeVisible,
+                                                               String operatorUserId) {
+        requireSubject(subjectId);
+        if (subjectMapper.updateAllEmployeeVisible(subjectId, allEmployeeVisible, operatorUserId) == 0) {
+            throw new IllegalArgumentException("展示主体不存在：" + subjectId);
+        }
+        return getProfile(subjectId);
+    }
+
     private InvoiceSubject requireSubject(Long subjectId) {
         InvoiceSubject subject = subjectMapper.selectById(subjectId);
         if (subject == null) {

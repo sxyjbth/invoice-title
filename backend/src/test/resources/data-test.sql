@@ -1,7 +1,7 @@
 INSERT INTO invoice_title
 (id, company_name, taxpayer_id, registered_address, phone, bank_name, bank_account, status, subject_names, created_by, created_at, updated_at, updated_by, deleted)
 VALUES
-(1, '杭州赛宝卓越技术有限公司', '91110400MADFF1HE1T', '浙江省杭州市钱塘区临江街道纬五路3688号临江科创园6号楼12楼', '4008696096', '宁波银行股份有限公司北京丰台支行', '86041110000957180', 'PUBLISHED', '杭州主体,华东主体', 'ding-user-finance', '2026-08-07 15:46:00', '2026-08-07 15:46:00', '王财务', 0),
+(1, '杭州赛宝卓越技术有限公司', '91110400MADFF1HE1T', '浙江省杭州市钱塘区临江街道纬五路3688号临江科创园6号楼12楼', '4008696096', '宁波银行股份有限公司北京丰台支行', '86041110000957180', 'PUBLISHED', '杭州主体', 'ding-user-finance', '2026-08-07 15:46:00', '2026-08-07 15:46:00', '王财务', 0),
 (2, '北京示例技术服务有限公司', '91110108MA01EXAMPLE', '北京市海淀区示例路1号', '010-88888888', '招商银行北京分行', '6225888800003028', 'DRAFT', '北京主体', 'ding-user-finance', '2026-08-06 10:22:00', '2026-08-06 10:22:00', '李会计', 0);
 
 INSERT INTO invoice_title_version

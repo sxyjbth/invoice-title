@@ -249,6 +249,27 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
+  it("新增或编辑抬头时主体字段为可空的单选框", async () => {
+    const wrapper = await mountAdmin(true);
+    await wrapper.findAll("button").find((item) => item.text().includes("新增抬头"))!.trigger("click");
+    await nextTick();
+
+    expect(document.body.textContent).toContain("可选择一个主体");
+    expect(adminSource).toContain('v-model="titleForm.subjectId"');
+    expect(adminSource).not.toContain('v-model="titleForm.subjectIds" multiple');
+    wrapper.unmount();
+  });
+
+  it("一对一绑定选择器使用不受管理列表分页和筛选影响的独立数据源", () => {
+    expect(adminSource).toContain("const titleSubjectOptions = ref<InvoiceSubject[]>");
+    expect(adminSource).toContain("const subjectTitleOptions = ref<InvoiceTitle[]>");
+    expect(adminSource).toContain("await loadTitleSubjectOptions()");
+    expect(adminSource).toContain("await loadSubjectTitleOptions()");
+    expect(adminSource).toContain('v-for="subject in titleSubjectOptions"');
+    expect(adminSource).toContain('v-for="title in subjectTitleOptions"');
+    expect(adminSource).toContain("loadTitles(), loadTitleCounts(), loadSubjects(), loadTitleSubjectOptions(), loadSubjectTitleOptions()");
+  });
+
   it("抬头管理不展示版本查看或预览功能，版本仍由后端写入数据库", async () => {
     const wrapper = await mountAdmin();
 
@@ -387,7 +408,7 @@ describe("财务端发票抬头管理", () => {
     expect(permissionPage.text()).toContain("技术中心 · 86 人");
     expect(permissionPage.text()).toContain("员工授权");
     expect(permissionPage.text()).toContain("单独授权 12 名员工");
-    expect(permissionPage.text()).toContain("保存权限");
+    expect(permissionPage.text()).not.toContain("保存权限");
 
     await permissionPage.findAll("button").find((item) => item.text().includes("北京主体"))!.trigger("click");
     expect(permissionPage.text()).toContain("当前可见 46 人");
@@ -515,6 +536,32 @@ describe("财务端发票抬头管理", () => {
         && parsed.searchParams.get("departmentId") === "11";
     })).toBe(true);
     wrapper.unmount();
+  });
+
+  it("全员可见开关点击后立即单独保存并采用后端返回的真实人数", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      subjectId: 1,
+      subjectName: "杭州主体",
+      visibleCount: 386,
+      allEmployeeVisible: true,
+      departments: [],
+      employeeRules: [],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const wrapper = await mountAdmin();
+    await clickMenu(wrapper, "主体权限");
+    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
+
+    await permissionPage.get('[aria-label="全员可见"]').trigger("click");
+    await flushPromises();
+
+    expect(request).toHaveBeenCalledWith(
+      "/api/admin/subjects/1/permission-profile/all-employee-visible",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ allEmployeeVisible: true }),
+      }),
+    );
+    expect(permissionPage.text()).toContain("当前可见 386 人");
   });
 
   it("部门授权中的成员可继承部门权限并保存员工级关闭覆盖", async () => {

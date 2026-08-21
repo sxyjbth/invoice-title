@@ -4,6 +4,7 @@ import com.saibao.invoice.domain.InvoiceTitle;
 import com.saibao.invoice.domain.InvoiceTitleVersion;
 import com.saibao.invoice.domain.QrToken;
 import com.saibao.invoice.enums.InvoiceTitleStatusEnum;
+import com.saibao.invoice.exception.QrTokenExpiredException;
 import com.saibao.invoice.mapper.EmployeeInvoiceTitleMapper;
 import com.saibao.invoice.mapper.InvoiceTitleMapper;
 import com.saibao.invoice.mapper.InvoiceTitleVersionMapper;
@@ -59,7 +60,7 @@ public class QrTokenServiceImpl implements IQrTokenService {
     public InvoiceTitleVersionVO resolve(String rawToken) {
         QrToken token = qrTokenMapper.selectByToken(rawToken);
         if (token == null || !token.getExpiresAt().isAfter(LocalDateTime.now())) {
-            throw new IllegalStateException("二维码已过期或不存在");
+            throw new QrTokenExpiredException();
         }
         InvoiceTitle title = invoiceTitleMapper.selectById(token.getTitleId());
         boolean active = title != null

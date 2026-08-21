@@ -3,11 +3,9 @@ package com.saibao.invoice.service.impl;
 import com.saibao.invoice.domain.InvoiceTitle;
 import com.saibao.invoice.domain.InvoiceSubject;
 import com.saibao.invoice.domain.InvoiceTitleVersion;
-import com.saibao.invoice.domain.PublishedSubjectBinding;
 import com.saibao.invoice.dto.InvoiceTitlePageQueryDTO;
 import com.saibao.invoice.dto.InvoiceTitleSaveDTO;
 import com.saibao.invoice.enums.InvoiceTitleStatusEnum;
-import com.saibao.invoice.mapper.InvoiceSubjectMapper;
 import com.saibao.invoice.mapper.InvoiceTitleMapper;
 import com.saibao.invoice.mapper.InvoiceTitleVersionMapper;
 import com.saibao.invoice.service.IInvoiceTitleService;
@@ -29,8 +27,8 @@ import java.util.List;
 public class InvoiceTitleServiceImpl implements IInvoiceTitleService {
 
     private final InvoiceTitleMapper invoiceTitleMapper;
-    private final InvoiceSubjectMapper invoiceSubjectMapper;
     private final InvoiceTitleVersionMapper versionMapper;
+    private final InvoiceTitleSubjectBindingManager bindingManager;
 
     @Override
     public PageResult<InvoiceTitleVO> page(InvoiceTitlePageQueryDTO query) {
@@ -54,30 +52,34 @@ public class InvoiceTitleServiceImpl implements IInvoiceTitleService {
     @Transactional
     public Long create(InvoiceTitleSaveDTO request, String operatorUserId) {
         ensureTaxpayerUnique(request.getTaxpayerId(), null);
-        List<InvoiceSubject> subjects = requireActiveSubjects(request.getSubjectIds(), isPublished(request));
-        ensureSubjectsAvailableForPublication(request, subjects, null);
+        InvoiceSubject subject = bindingManager.requireAvailableSubject(
+                request.getSubjectIds(), null, isPublished(request));
+        List<InvoiceSubject> subjects = subject == null ? Collections.emptyList() : List.of(subject);
+        List<Long> subjectIds = subject == null ? Collections.emptyList() : List.of(subject.getId());
         InvoiceTitle title = new InvoiceTitle();
         applyRequest(title, request, subjects, operatorUserId);
         title.setCreatedBy(operatorUserId);
         title.setCreatedAt(BusinessTime.now());
         invoiceTitleMapper.insert(title);
-        replaceSubjects(title.getId(), subjects, operatorUserId);
-        createVersion(title, request.getSubjectIds(), "CREATE", operatorUserId);
+        bindingManager.replaceTitleBinding(title.getId(), subject, operatorUserId);
+        createVersion(title, subjectIds, "CREATE", operatorUserId);
         return title.getId();
     }
 
     @Override
     @Transactional
     public void update(Long id, InvoiceTitleSaveDTO request, String operatorUserId) {
-        InvoiceTitle title = invoiceTitleMapper.selectById(id);
+        InvoiceTitle title = invoiceTitleMapper.selectByIdForUpdate(id);
         if (title == null) throw new IllegalArgumentException("发票抬头不存在：" + id);
         ensureTaxpayerUnique(request.getTaxpayerId(), id);
-        List<InvoiceSubject> subjects = requireActiveSubjects(request.getSubjectIds(), isPublished(request));
-        ensureSubjectsAvailableForPublication(request, subjects, id);
+        InvoiceSubject subject = bindingManager.requireAvailableSubject(
+                request.getSubjectIds(), id, isPublished(request));
+        List<InvoiceSubject> subjects = subject == null ? Collections.emptyList() : List.of(subject);
+        List<Long> subjectIds = subject == null ? Collections.emptyList() : List.of(subject.getId());
         applyRequest(title, request, subjects, operatorUserId);
         if (invoiceTitleMapper.update(title) == 0) throw new IllegalArgumentException("发票抬头不存在：" + id);
-        replaceSubjects(id, subjects, operatorUserId);
-        createVersion(title, request.getSubjectIds(),
+        bindingManager.replaceTitleBinding(id, subject, operatorUserId);
+        createVersion(title, subjectIds,
                 "PUBLISHED".equals(request.getStatus()) ? "PUBLISH" : "EDIT", operatorUserId);
     }
 
@@ -93,40 +95,6 @@ public class InvoiceTitleServiceImpl implements IInvoiceTitleService {
         InvoiceTitle duplicate = invoiceTitleMapper.selectByTaxpayerId(taxpayerId.trim());
         if (duplicate != null && (currentId == null || !duplicate.getId().equals(currentId))) {
             throw new IllegalArgumentException("纳税人识别号已存在：" + taxpayerId);
-        }
-    }
-
-    private List<InvoiceSubject> requireActiveSubjects(List<Long> subjectIds, boolean lockForPublication) {
-        if (subjectIds == null || subjectIds.isEmpty()) {
-            if (lockForPublication) throw new IllegalArgumentException("发布抬头时请至少选择一个展示主体");
-            return Collections.emptyList();
-        }
-        List<Long> distinctIds = new LinkedHashSet<>(subjectIds).stream().toList();
-        List<InvoiceSubject> subjects = lockForPublication
-                ? invoiceSubjectMapper.selectByIdsForUpdate(distinctIds)
-                : invoiceSubjectMapper.selectByIds(distinctIds);
-        if (subjects.size() != distinctIds.size()) throw new IllegalArgumentException("存在无效的展示主体");
-        if (subjects.stream().anyMatch(subject -> !"ENABLED".equals(subject.getStatus()))) {
-            throw new IllegalArgumentException("已停用主体不能用于发票抬头展示");
-        }
-        return subjects;
-    }
-
-    /**
-     * 草稿允许预选任意主体；只有发布时才校验当前有效展示关系。
-     * 同一抬头编辑发布时排除自身，避免把原有绑定误判成冲突。
-     */
-    private void ensureSubjectsAvailableForPublication(InvoiceTitleSaveDTO request,
-                                                       List<InvoiceSubject> subjects,
-                                                       Long currentTitleId) {
-        if (!isPublished(request)) return;
-        List<Long> subjectIds = subjects.stream().map(InvoiceSubject::getId).toList();
-        List<PublishedSubjectBinding> conflicts = invoiceTitleMapper
-                .selectPublishedSubjectBindings(subjectIds, currentTitleId);
-        if (!conflicts.isEmpty()) {
-            PublishedSubjectBinding conflict = conflicts.get(0);
-            throw new IllegalArgumentException("主体“" + conflict.subjectName()
-                    + "”已绑定已发布抬头“" + conflict.companyName() + "”，请先停用或调整原抬头");
         }
     }
 
@@ -147,11 +115,6 @@ public class InvoiceTitleServiceImpl implements IInvoiceTitleService {
                 .reduce((left, right) -> left + "," + right).orElse(""));
         title.setUpdatedBy(operatorUserId);
         title.setUpdatedAt(BusinessTime.now());
-    }
-
-    private void replaceSubjects(Long titleId, List<InvoiceSubject> subjects, String operatorUserId) {
-        invoiceTitleMapper.deleteTitleSubjects(titleId);
-        subjects.forEach(subject -> invoiceTitleMapper.insertTitleSubject(titleId, subject.getId(), operatorUserId));
     }
 
     private void createVersion(InvoiceTitle title, List<Long> subjectIds, String changeType, String operatorUserId) {

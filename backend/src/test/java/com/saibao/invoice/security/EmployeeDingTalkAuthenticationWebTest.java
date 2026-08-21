@@ -5,12 +5,14 @@ import com.saibao.invoice.integration.dingtalk.DingEmployeeSnapshot;
 import com.saibao.invoice.integration.dingtalk.DingTalkClient;
 import com.saibao.invoice.integration.dingtalk.DingTalkIdentity;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.net.CookieManager;
@@ -19,7 +21,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,6 +34,9 @@ class EmployeeDingTalkAuthenticationWebTest {
 
     @LocalServerPort
     private int port;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void employeeApisMustUseDingTalkSessionInsteadOfCallerSuppliedUserId() throws Exception {
@@ -58,6 +65,25 @@ class EmployeeDingTalkAuthenticationWebTest {
                 "{\"corpCode\":\"default\",\"authCode\":\"unknown-code\"}");
         assertThat(response.statusCode()).isEqualTo(403);
         assertThat(response.body()).contains("未同步");
+    }
+
+    @Test
+    void expiredQrTokenShouldReturnGoneWithFriendlyMessage() throws Exception {
+        String token = "expired-" + UUID.randomUUID().toString().replace("-", "");
+        jdbcTemplate.update("""
+                INSERT INTO invoice_qr_token
+                (token, title_id, version_id, employee_id, expires_at, created_at)
+                VALUES (?, 1, 3, 1, ?, ?)
+                """, token, LocalDateTime.now().minusSeconds(1), LocalDateTime.now().minusMinutes(11));
+        try {
+            HttpResponse<String> response = get(sessionClient(),
+                    "/api/employee/invoice-titles/qr/" + token);
+
+            assertThat(response.statusCode()).isEqualTo(410);
+            assertThat(response.body()).contains("二维码已过期，请重新获取二维码");
+        } finally {
+            jdbcTemplate.update("DELETE FROM invoice_qr_token WHERE token = ?", token);
+        }
     }
 
     private HttpClient sessionClient() {

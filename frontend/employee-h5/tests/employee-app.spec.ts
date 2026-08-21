@@ -29,7 +29,11 @@ describe("员工端发票抬头", () => {
     };
   });
 
-  function mockEmployeeApis(expectedAuthCode = "ding-auth-code", expectedCorpCode = "sebo") {
+  function mockEmployeeApis(
+    expectedAuthCode = "ding-auth-code",
+    expectedCorpCode = "sebo",
+    titleOverrides: Record<string, unknown> = {},
+  ) {
     return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.includes("/api/employee/auth/organizations")) {
@@ -57,6 +61,7 @@ describe("员工端发票抬头", () => {
           subjectNames: ["杭州主体"],
           updatedBy: "王财务",
           updatedAt: "2026-08-12T16:30:45",
+          ...titleOverrides,
         }], total: 1, pageNum: 1, pageSize: 20 }), { status: 200 });
       }
       throw new Error(`unexpected request: ${url}`);
@@ -110,6 +115,54 @@ describe("员工端发票抬头", () => {
 
     expect(wrapper.get(".company-intro p").text())
       .toBe("由王财务发布 · 当前有效 · 2026-08-12 16:30更新");
+  });
+
+  it("可选字段为 null 时页面和复制内容均按空白处理", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(window.navigator, "clipboard", "get").mockReturnValue({ writeText } as any);
+    mockEmployeeApis("ding-auth-code", "sebo", {
+      registeredAddress: null,
+      phone: null,
+      bankName: null,
+      bankAccount: null,
+    });
+
+    const wrapper = mount(EmployeeApp, { global });
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain("null");
+    expect(wrapper.findAll(".field-value").slice(1).map((field) => field.text()))
+      .toEqual(["", "", "", ""]);
+
+    await wrapper.get('[aria-label="复制地址"]').trigger("click");
+    await flushPromises();
+    expect(writeText).toHaveBeenLastCalledWith("");
+
+    await wrapper.findAll("button").find((button) => button.text().includes("复制全部"))!.trigger("click");
+    await flushPromises();
+    expect(writeText).toHaveBeenLastCalledWith([
+      "公司名称：杭州赛宝卓越技术有限公司",
+      "纳税人识别号：91110400MADFF1HE1T",
+      "地址：",
+      "电话：",
+      "开户行：",
+      "银行账号：",
+    ].join("\n"));
+  });
+
+  it("公司名称提供与其他字段一致的单字段复制按钮", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(window.navigator, "clipboard", "get").mockReturnValue({ writeText } as any);
+    mockEmployeeApis();
+
+    const wrapper = mount(EmployeeApp, { global });
+    await flushPromises();
+
+    await wrapper.get('[aria-label="复制公司名称"]').trigger("click");
+    await flushPromises();
+
+    expect(writeText).toHaveBeenCalledWith("杭州赛宝卓越技术有限公司");
+    expect(wrapper.text()).toContain("公司名称已复制");
   });
 
   it("与 sebo-meal 一致在钉钉容器没有全局 API 时使用完整 npm SDK", async () => {
@@ -209,6 +262,18 @@ describe("员工端发票抬头", () => {
     expect(wrapper.find(".employee-header").exists()).toBe(false);
     expect(wrapper.find(".subject-selector").exists()).toBe(false);
     expect(wrapper.find('[data-testid="show-qr"]').exists()).toBe(false);
+  });
+
+  it("过期二维码接口返回 410 且响应体不可解析时展示重新获取提示", async () => {
+    window.history.replaceState({}, "", "/?qrToken=expired-token");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 410 }));
+
+    const wrapper = mount(EmployeeApp, { global });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("二维码已过期，请重新获取二维码");
+    expect(wrapper.text()).not.toContain("请求失败");
+    expect(wrapper.text()).not.toContain("服务暂时不可用");
   });
 
   it("扫码页面在移动端安全剪贴板不可用时使用兼容复制方案", async () => {

@@ -32,6 +32,13 @@
         FROM invoice_title WHERE id = #{id} AND deleted = 0
     </select>
 
+    <select id="selectByIdForUpdate" resultType="com.saibao.invoice.domain.InvoiceTitle">
+        SELECT id, company_name, taxpayer_id, registered_address, phone, bank_name,
+               bank_account, status, current_published_version_id, subject_names, updated_at, updated_by
+        FROM invoice_title WHERE id = #{id} AND deleted = 0
+        FOR UPDATE
+    </select>
+
     <select id="selectByTaxpayerId" resultType="com.saibao.invoice.domain.InvoiceTitle">
         SELECT id, company_name, taxpayer_id, registered_address, phone, bank_name,
                bank_account, status, current_published_version_id, subject_names, updated_at, updated_by
@@ -44,20 +51,6 @@
 
     <select id="selectTitleIdsBySubjectId" resultType="long">
         SELECT title_id FROM invoice_title_subject WHERE subject_id = #{subjectId} ORDER BY id ASC
-    </select>
-
-    <select id="selectPublishedSubjectBindings" resultType="com.saibao.invoice.domain.PublishedSubjectBinding">
-        SELECT s.id AS subject_id, s.subject_name, t.id AS title_id, t.company_name
-        FROM invoice_title_subject its
-        INNER JOIN invoice_subject s ON s.id = its.subject_id AND s.deleted = 0
-        INNER JOIN invoice_title t ON t.id = its.title_id AND t.deleted = 0 AND t.status = 'PUBLISHED'
-        WHERE its.subject_id IN
-        <foreach collection="subjectIds" item="subjectId" open="(" separator="," close=")">#{subjectId}</foreach>
-        <if test="excludeTitleId != null">
-            AND t.id != #{excludeTitleId}
-        </if>
-        ORDER BY s.sort_no ASC, s.id ASC, t.id ASC
-        FOR UPDATE
     </select>
 
     <insert id="insert" parameterType="com.saibao.invoice.domain.InvoiceTitle" useGeneratedKeys="true" keyProperty="id">
@@ -90,6 +83,19 @@
     <delete id="deleteSubjectBindings">
         DELETE FROM invoice_title_subject WHERE subject_id = #{subjectId}
     </delete>
+
+    <!-- 主体改名时仅同步展示名称快照，不改变抬头的业务更新时间和操作人。 -->
+    <update id="updateSubjectNameSnapshotBySubjectId">
+        UPDATE invoice_title
+        SET subject_names = #{subjectName}
+        WHERE deleted = 0
+          AND EXISTS (
+              SELECT 1
+              FROM invoice_title_subject relation_record
+              WHERE relation_record.title_id = invoice_title.id
+                AND relation_record.subject_id = #{subjectId}
+          )
+    </update>
 
     <update id="updateCurrentPublishedVersion">
         UPDATE invoice_title

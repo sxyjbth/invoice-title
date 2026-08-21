@@ -1,5 +1,6 @@
 package com.saibao.invoice.controller;
 
+import com.saibao.invoice.dto.AllEmployeeVisibleUpdateDTO;
 import com.saibao.invoice.dto.SubjectPermissionProfileSaveDTO;
 import com.saibao.invoice.service.ISubjectPermissionService;
 import com.saibao.invoice.vo.FinanceAccountVO;
@@ -12,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,5 +41,17 @@ public class SubjectPermissionProfileController {
             @Valid @RequestBody SubjectPermissionProfileSaveDTO request,
             @AuthenticationPrincipal FinanceAccountVO account) {
         return service.saveProfile(subjectId, request, account.getUsername());
+    }
+
+    @PatchMapping("/{subjectId}/permission-profile/all-employee-visible")
+    @Operation(
+            summary = "即时更新全员可见开关",
+            description = "仅更新全员可见状态并返回最新权限配置，不修改部门授权和员工允许/拒绝规则")
+    public SubjectPermissionProfileVO updateAllEmployeeVisible(
+            @Parameter(description = "主体主键 ID", required = true) @PathVariable Long subjectId,
+            @Valid @RequestBody AllEmployeeVisibleUpdateDTO request,
+            @AuthenticationPrincipal FinanceAccountVO account) {
+        return service.updateAllEmployeeVisible(
+                subjectId, Boolean.TRUE.equals(request.getAllEmployeeVisible()), account.getUsername());
     }
 }

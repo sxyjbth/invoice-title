@@ -115,4 +115,38 @@ class DatabaseMigrationContractTest {
                 .contains("target_corp_code VARCHAR(50) NOT NULL DEFAULT 'default'")
                 .contains("employee_id BIGINT UNSIGNED DEFAULT NULL");
     }
+
+    @Test
+    void oneToOneBindingMigrationCleansHistoricalDuplicatesAndAddsUniqueKeys() throws IOException {
+        Path migration = Path.of("src", "main", "resources", "db", "migration",
+                "V107__enforce_one_to_one_title_subject_binding.sql");
+
+        assertThat(migration).exists();
+        String sql = Files.readString(migration, StandardCharsets.UTF_8);
+        assertThat(sql)
+                .contains("DELETE duplicate_relation")
+                .contains("INNER JOIN invoice_title_subject_binding_archive archived_relation")
+                .contains("ON DUPLICATE KEY UPDATE source_relation_id = VALUES(source_relation_id)")
+                .contains("uk_invoice_title_subject_title (title_id)")
+                .contains("uk_invoice_title_subject_subject (subject_id)")
+                .contains("一个抬头最多绑定一个主体，一个主体最多绑定一个抬头");
+        assertThat(sql.indexOf("DROP TEMPORARY TABLE tmp_invoice_title_subject_keep"))
+                .isLessThan(sql.indexOf("ALTER TABLE invoice_title_subject"));
+    }
+
+    @Test
+    void subjectNameSnapshotRepairMigrationUsesCurrentBoundSubjectWithoutTouchingTitleMetadata() throws IOException {
+        Path migration = Path.of("src", "main", "resources", "db", "migration",
+                "V108__synchronize_bound_subject_name_snapshots.sql");
+
+        assertThat(migration).exists();
+        String sql = Files.readString(migration, StandardCharsets.UTF_8);
+        assertThat(sql)
+                .contains("UPDATE invoice_title title_record")
+                .contains("INNER JOIN invoice_title_subject relation")
+                .contains("INNER JOIN invoice_subject subject_record")
+                .contains("SET title_record.subject_names = subject_record.subject_name")
+                .doesNotContain("updated_at")
+                .doesNotContain("updated_by");
+    }
 }

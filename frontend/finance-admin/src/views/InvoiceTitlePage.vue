@@ -42,12 +42,12 @@ const {
       <header class="card-header"><div><h2>抬头数据</h2><p>共 {{ currentTotal }} 条真实业务数据</p></div><span>共 {{ currentTotal }} 条</span></header>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>公司名称</th><th>纳税人识别号</th><th>展示主体</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+          <thead><tr><th>公司名称</th><th>纳税人识别号</th><th>绑定主体</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
           <tbody>
             <tr v-for="title in filteredTitles" :key="title.id">
               <td><strong>{{ title.companyName }}</strong><small>{{ title.bankSummary }}</small></td>
               <td class="tax-id">{{ title.taxpayerId }}</td>
-              <td><span v-for="subject in title.subjects" :key="subject" class="subject-tag">{{ subject }}</span></td>
+              <td><span v-if="title.subjects[0]" class="subject-tag">{{ title.subjects[0] }}</span><span v-else>-</span></td>
               <td><span class="status" :class="statusClass(title.status)"><i />{{ statusLabel(title.status) }}</span></td>
               <td>{{ formatDateTime(title.updatedAt) }}<small>{{ title.updatedBy }}</small></td>
               <td class="row-actions"><el-button link type="primary" @click="openTitleEditor(title)">编辑</el-button></td>

@@ -75,6 +75,21 @@ class InvoiceTitleCoreServiceTest {
 
     @Test
     @Transactional
+    void draftShouldRejectSubjectAlreadyBoundToAnotherTitle() {
+        InvoiceTitleSaveDTO request = new InvoiceTitleSaveDTO();
+        request.setCompanyName("草稿主体冲突测试有限公司");
+        request.setTaxpayerId("91330100DRAFTBIND001");
+        request.setSubjectIds(List.of(1L));
+        request.setStatus(InvoiceTitleStatusEnum.DRAFT.getCode());
+
+        assertThatThrownBy(() -> invoiceTitleService.create(request, "finance-test"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("杭州主体")
+                .hasMessageContaining("杭州赛宝卓越技术有限公司");
+    }
+
+    @Test
+    @Transactional
     void draftShouldAllowSavingWithoutSubjects() {
         InvoiceTitleSaveDTO request = new InvoiceTitleSaveDTO();
         request.setCompanyName("待绑定主体测试有限公司");

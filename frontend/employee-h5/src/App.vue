@@ -8,10 +8,10 @@ type InvoiceTitle = {
   id: number;
   companyName: string;
   taxpayerId: string;
-  registeredAddress: string;
-  phone: string;
-  bankName: string;
-  bankAccount: string;
+  registeredAddress: string | null;
+  phone: string | null;
+  bankName: string | null;
+  bankAccount: string | null;
   subjectNames: string[];
   updatedBy: string;
   updatedAt: string;
@@ -26,6 +26,8 @@ type PageResult<T> = { records: T[]; total: number; pageNum: number; pageSize: n
 type QrToken = { token: string; accessPath: string; expiresAt: string };
 type InvoiceField = { label: string; value: string };
 type DingTalkOrganization = { corpCode: string; corpName: string; corpId: string };
+
+const QR_TOKEN_EXPIRED_MESSAGE = "二维码已过期，请重新获取二维码";
 
 const titles = ref<InvoiceTitle[]>([]);
 const selectedSubject = ref("");
@@ -51,12 +53,13 @@ const publishDescription = computed(() => {
     ? `由${publisher}发布 · 当前有效 · ${updatedTime}更新`
     : `由${publisher}发布 · 当前有效`;
 });
+const normalizeFieldValue = (value: string | null | undefined) => value ?? "";
 const fields = computed<InvoiceField[]>(() => currentTitle.value ? [
-  { label: "纳税人识别号", value: currentTitle.value.taxpayerId },
-  { label: "地址", value: currentTitle.value.registeredAddress },
-  { label: "电话", value: currentTitle.value.phone },
-  { label: "开户行", value: currentTitle.value.bankName },
-  { label: "银行账号", value: currentTitle.value.bankAccount },
+  { label: "纳税人识别号", value: normalizeFieldValue(currentTitle.value.taxpayerId) },
+  { label: "地址", value: normalizeFieldValue(currentTitle.value.registeredAddress) },
+  { label: "电话", value: normalizeFieldValue(currentTitle.value.phone) },
+  { label: "开户行", value: normalizeFieldValue(currentTitle.value.bankName) },
+  { label: "银行账号", value: normalizeFieldValue(currentTitle.value.bankAccount) },
 ] : []);
 
 /** LocalDateTime 由后端按 ISO 格式返回，直接截取到分钟，避免浏览器时区二次换算。 */
@@ -77,8 +80,9 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({ message: "服务暂时不可用" }));
-    throw new Error(payload.message || `请求失败（${response.status}）`);
+    const payload = await response.json().catch(() => ({}));
+    const fallbackMessage = response.status === 410 ? QR_TOKEN_EXPIRED_MESSAGE : "服务暂时不可用";
+    throw new Error(payload.message || fallbackMessage);
   }
   return response.json() as Promise<T>;
 }
@@ -283,7 +287,12 @@ onBeforeUnmount(() => {
 
     <main v-else-if="currentTitle" class="title-content">
       <section class="company-intro">
-        <h1>{{ companyName }}</h1>
+        <div class="company-name-row">
+          <h1>{{ companyName }}</h1>
+          <el-button link type="primary" aria-label="复制公司名称" @click="copyText(companyName, '公司名称已复制')">
+            复制
+          </el-button>
+        </div>
         <p>{{ publishDescription }}</p>
       </section>
 

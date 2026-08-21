@@ -1,6 +1,8 @@
 package com.saibao.invoice.service;
 
 import com.saibao.invoice.dto.EmployeeInvoiceTitlePageQueryDTO;
+import com.saibao.invoice.dto.InvoiceSubjectSaveDTO;
+import com.saibao.invoice.dto.InvoiceTitlePageQueryDTO;
 import com.saibao.invoice.vo.InvoiceTitleVO;
 import com.saibao.invoice.vo.PageResult;
 import com.saibao.invoice.vo.QrTokenVO;
@@ -26,6 +28,7 @@ class EmployeeAccessAndQrServiceTest {
     @Autowired private IEmployeeInvoiceTitleService employeeInvoiceTitleService;
     @Autowired private IQrTokenService qrTokenService;
     @Autowired private IInvoiceTitleService invoiceTitleService;
+    @Autowired private IInvoiceSubjectService invoiceSubjectService;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private SqlSession sqlSession;
 
@@ -62,6 +65,46 @@ class EmployeeAccessAndQrServiceTest {
 
         assertThat(title.getUpdatedBy()).isEqualTo("王财务");
         assertThat(title.getUpdatedAt()).isEqualTo(LocalDateTime.of(2026, 8, 12, 16, 30, 45));
+    }
+
+    @Test
+    void renamingSubjectShouldSynchronizeFinanceAndEmployeeTitleNamesWithoutChangingTitleMetadata() {
+        LocalDateTime originalUpdatedAt = jdbcTemplate.queryForObject(
+                "SELECT updated_at FROM invoice_title WHERE id = 1", LocalDateTime.class);
+        String originalUpdatedBy = jdbcTemplate.queryForObject(
+                "SELECT updated_by FROM invoice_title WHERE id = 1", String.class);
+
+        InvoiceSubjectSaveDTO request = new InvoiceSubjectSaveDTO();
+        request.setSubjectName("杭州更新主体");
+        request.setStatus("ENABLED");
+        request.setSortNo(10);
+        request.setOperatorUserId("admin");
+        invoiceSubjectService.update(1L, request);
+        sqlSession.clearCache();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT subject_names FROM invoice_title WHERE id = 1", String.class))
+                .isEqualTo("杭州更新主体");
+
+        InvoiceTitlePageQueryDTO financeQuery = new InvoiceTitlePageQueryDTO();
+        financeQuery.setPageNum(1);
+        financeQuery.setPageSize(20);
+        InvoiceTitleVO financeTitle = invoiceTitleService.page(financeQuery).getRecords().stream()
+                .filter(title -> title.getId().equals(1L))
+                .findFirst()
+                .orElseThrow();
+        InvoiceTitleVO employeeTitle = employeeInvoiceTitleService
+                .pageAuthorized(new EmployeeInvoiceTitlePageQueryDTO(), 1L)
+                .getRecords().get(0);
+
+        assertThat(financeTitle.getSubjectNames()).containsExactly("杭州更新主体");
+        assertThat(employeeTitle.getSubjectNames()).containsExactly("杭州更新主体");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT updated_at FROM invoice_title WHERE id = 1", LocalDateTime.class))
+                .isEqualTo(originalUpdatedAt);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT updated_by FROM invoice_title WHERE id = 1", String.class))
+                .isEqualTo(originalUpdatedBy);
     }
 
     @Test

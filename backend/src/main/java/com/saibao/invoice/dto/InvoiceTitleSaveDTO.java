@@ -47,7 +47,9 @@ public class InvoiceTitleSaveDTO {
     private String bankAccount;
 
     @NotNull(message = "展示主体字段不能为空；草稿可传空数组")
-    @Schema(description = "展示主体 ID 列表；草稿可传空数组，发布时至少选择一个主体", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Size(max = 1, message = "一个发票抬头只能绑定一个主体")
+    @Schema(description = "绑定主体 ID 列表；最多一个。草稿可传空数组，发布时必须绑定一个主体",
+            requiredMode = Schema.RequiredMode.REQUIRED)
     private List<Long> subjectIds;
 
     @NotBlank(message = "抬头状态不能为空")
