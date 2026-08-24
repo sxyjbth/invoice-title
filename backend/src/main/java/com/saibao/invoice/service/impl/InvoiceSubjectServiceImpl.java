@@ -6,13 +6,13 @@ import com.saibao.invoice.dto.SubjectPageQueryDTO;
 import com.saibao.invoice.dto.SubjectTitleBindingDTO;
 import com.saibao.invoice.mapper.InvoiceSubjectMapper;
 import com.saibao.invoice.service.IInvoiceSubjectService;
+import com.saibao.invoice.util.BusinessTime;
 import com.saibao.invoice.vo.InvoiceSubjectVO;
 import com.saibao.invoice.vo.PageResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -49,8 +49,9 @@ public class InvoiceSubjectServiceImpl implements IInvoiceSubjectService {
         subject.setSortNo(request.getSortNo());
         subject.setCreatedBy(request.getOperatorUserId());
         subject.setUpdatedBy(request.getOperatorUserId());
-        subject.setCreatedAt(LocalDateTime.now());
-        subject.setUpdatedAt(LocalDateTime.now());
+        var now = BusinessTime.now();
+        subject.setCreatedAt(now);
+        subject.setUpdatedAt(now);
         mapper.insert(subject);
         return subject.getId();
     }

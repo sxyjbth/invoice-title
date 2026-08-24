@@ -302,6 +302,7 @@ const importHistoryPageSize = ref(10);
 const importHistoryTotal = ref(2);
 const importErrorTaskId = ref<number | null>(null);
 const importRowErrors = ref<ImportRowError[]>([]);
+const importResult = ref<ImportHistory | null>(null);
 const importErrorsLoading = ref(false);
 const subjectPageNum = ref(1);
 const subjectPageSize = ref(20);
@@ -635,6 +636,7 @@ function resetImportDialogState() {
   clearImportFileSelection();
   importErrorTaskId.value = null;
   importRowErrors.value = [];
+  importResult.value = null;
 }
 
 function closeImportDialog() {
@@ -658,6 +660,9 @@ function handleImportFileChange(event: Event) {
   const file = input.files?.[0] ?? null;
   importFile.value = file;
   importFileName.value = file?.name ?? "";
+  importErrorTaskId.value = null;
+  importRowErrors.value = [];
+  importResult.value = null;
 }
 
 async function loadImportHistory(silent = false) {
@@ -739,6 +744,11 @@ function importErrorSummary(error: ImportRowError) {
   return `第 ${error.rowNo} 行：${error.errorMessage}${taxpayer}`;
 }
 
+function importResultTitle(result: ImportHistory) {
+  const counts = `成功 ${result.successCount} 条，失败 ${result.failureCount} 条`;
+  return result.successCount > 0 ? `部分导入完成：${counts}` : `导入失败：${counts}`;
+}
+
 async function submitImport() {
   if (!importFile.value) return;
   importSubmitting.value = true;
@@ -751,11 +761,16 @@ async function submitImport() {
       body,
     });
     const result = await readApi<ImportHistory>(response, "导入请求失败");
+    importResult.value = result;
     clearImportFileSelection();
     if (result.failureCount > 0) {
       const errors = await loadImportErrors(result.id);
       const firstReason = errors[0] ? `第 ${errors[0].rowNo} 行，${errors[0].errorMessage}` : `共有 ${result.failureCount} 条数据校验失败`;
-      ElMessage.error(`导入失败：${firstReason}`);
+      if (result.successCount > 0) {
+        ElMessage.warning(`导入完成：成功 ${result.successCount} 条，失败 ${result.failureCount} 条；成功数据已生成草稿`);
+      } else {
+        ElMessage.error(`导入失败：${firstReason}`);
+      }
     } else {
       importErrorTaskId.value = null;
       importRowErrors.value = [];
@@ -1381,15 +1396,17 @@ provide(financeLayoutKey, {
           </div>
           <el-button link type="primary" tag="a" :href="importTemplateUrl"><el-icon><Download /></el-icon>下载导入模板</el-button>
           <el-alert
-            v-if="importRowErrors.length"
+            v-if="importResult && importResult.failureCount > 0"
+            aria-label="本次导入结果"
             class="import-error-alert"
-            type="error"
+            :type="importResult.successCount > 0 ? 'warning' : 'error'"
             :closable="false"
             show-icon
-            title="导入失败"
+            :title="importResultTitle(importResult)"
           >
             <template #default>
-              <p v-for="error in importRowErrors" :key="error.id">导入失败：{{ importErrorSummary(error) }}</p>
+              <p v-if="!importRowErrors.length">失败原因加载失败，可在“导入历史”中重新查看。</p>
+              <p v-for="error in importRowErrors" :key="error.id">失败原因：{{ importErrorSummary(error) }}</p>
             </template>
           </el-alert>
         </el-tab-pane>

@@ -912,6 +912,56 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
+  it("批量导入部分成功时在弹窗中同时展示成功数、失败数和失败原因", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/admin/invoice-imports" && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          id: 19,
+          taskNo: "IMP-PARTIAL-19",
+          status: "PARTIAL_FAILED",
+          totalCount: 3,
+          successCount: 2,
+          failureCount: 1,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/invoice-imports/errors")) {
+        return new Response(JSON.stringify({
+          records: [{
+            id: 191,
+            rowNo: 8,
+            taxpayerId: "91610113MA6UJH7890",
+            errorCode: "DUPLICATE_TAXPAYER_ID",
+            errorMessage: "纳税人识别号已存在或在当前文件中重复",
+          }],
+          total: 1,
+          pageNum: 1,
+          pageSize: 100,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ records: [], total: 0 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const wrapper = await mountAdmin(true);
+    await wrapper.get('[data-testid="batch-import"]').trigger("click");
+    layoutVm(wrapper).importFile = new File(["xlsx"], "titles.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    await layoutVm(wrapper).submitImport();
+    await flushPromises();
+
+    const resultAlert = document.body.querySelector('[aria-label="本次导入结果"]');
+    expect(resultAlert).not.toBeNull();
+    expect(resultAlert?.textContent).toContain("成功 2 条");
+    expect(resultAlert?.textContent).toContain("失败 1 条");
+    expect(resultAlert?.textContent).toContain("第 8 行");
+    expect(resultAlert?.textContent).toContain("纳税人识别号已存在或在当前文件中重复");
+    wrapper.unmount();
+  });
+
   it("批量导入已返回业务失败时不被后续列表刷新异常覆盖", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
