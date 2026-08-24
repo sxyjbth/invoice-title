@@ -26,11 +26,13 @@ type PageResult<T> = { records: T[]; total: number; pageNum: number; pageSize: n
 type QrToken = { token: string; accessPath: string; expiresAt: string };
 type InvoiceField = { label: string; value: string };
 type DingTalkOrganization = { corpCode: string; corpName: string; corpId: string };
+type SubjectSelectInstance = { toggleMenu: () => void };
 
 const QR_TOKEN_EXPIRED_MESSAGE = "二维码已过期，请重新获取二维码";
 
 const titles = ref<InvoiceTitle[]>([]);
 const selectedSubject = ref("");
+const subjectSelectRef = ref<SubjectSelectInstance | null>(null);
 const loading = ref(true);
 const errorMessage = ref("");
 const qrVisible = ref(false);
@@ -250,6 +252,10 @@ async function refreshQr() {
   notify("二维码已刷新，有效期重新计时");
 }
 
+function toggleSubjectSelector() {
+  subjectSelectRef.value?.toggleMenu();
+}
+
 watch(selectedSubject, () => closeQr());
 onMounted(initialize);
 onBeforeUnmount(() => {
@@ -266,9 +272,24 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="subjects.length" class="subject-selector" aria-label="选择主体">
-        <el-select v-model="selectedSubject" size="large" aria-label="可查看主体">
+        <el-select
+          ref="subjectSelectRef"
+          v-model="selectedSubject"
+          :suffix-icon="null"
+          size="large"
+          aria-label="可查看主体"
+        >
           <el-option v-for="subject in subjects" :key="subject" :label="subject" :value="subject" />
         </el-select>
+        <el-button
+          link
+          type="primary"
+          class="subject-switch-button"
+          aria-label="切换主体"
+          @click.stop="toggleSubjectSelector"
+        >
+          切换
+        </el-button>
       </div>
     </header>
 

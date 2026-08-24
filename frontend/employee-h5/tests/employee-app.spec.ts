@@ -77,6 +77,24 @@ describe("员工端发票抬头", () => {
     expect(wrapper.find(".back-button").exists()).toBe(false);
   });
 
+  it("主体选择使用明确的切换按钮并由按钮打开选项", async () => {
+    mockEmployeeApis();
+    const wrapper = mount(EmployeeApp, { global });
+    await flushPromises();
+
+    const switchButton = wrapper.get('[aria-label="切换主体"]');
+    const combobox = wrapper.get('.subject-selector [role="combobox"]');
+
+    expect(switchButton.text()).toBe("切换");
+    expect(wrapper.find(".subject-selector .el-select__caret").exists()).toBe(false);
+    expect(combobox.attributes("aria-expanded")).toBe("false");
+
+    await switchButton.trigger("click");
+    await flushPromises();
+
+    expect(combobox.attributes("aria-expanded")).toBe("true");
+  });
+
   it("通过钉钉免登后展示服务端授权抬头，不向接口传员工身份", async () => {
     const request = mockEmployeeApis();
     const wrapper = mount(EmployeeApp, { global });
