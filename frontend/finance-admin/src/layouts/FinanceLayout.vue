@@ -82,6 +82,7 @@ type SubjectPermissionProfile = {
   departments: DingDepartment[];
   employeeRules: EmployeeRule[];
   departmentExcludedEmployeeIds?: number[];
+  partiallySelectedDepartmentIds?: number[];
   employeeCount: number;
 };
 
@@ -341,6 +342,7 @@ const selectedDepartmentIds = ref<number[]>([]);
 const revokedDepartmentIds = ref<number[]>([]);
 const reenabledEmployeeIds = ref<number[]>([]);
 const departmentExcludedEmployeeIds = ref<number[]>([]);
+const partiallySelectedDepartmentIds = ref<number[]>([]);
 const employeeEnabledDraft = reactive<Record<number, boolean>>({});
 const employeePermissionEdited = reactive<Record<number, boolean>>({});
 const employeePermissionStatus = ref<"ALL" | "ENABLED" | "DISABLED">("ALL");
@@ -1125,6 +1127,8 @@ function toggleDepartmentSelection(departmentId: number, selected: boolean) {
   }
   selectedDepartmentIds.value = [...ids];
   revokedDepartmentIds.value = [...revokedIds];
+  partiallySelectedDepartmentIds.value = partiallySelectedDepartmentIds.value
+    .filter((id) => id !== departmentId);
 
   const excludedEmployeeIds = new Set(departmentExcludedEmployeeIds.value);
   // 部门选择是强联动操作：本次勾选或取消统一覆盖该部门已加载成员的个人编辑状态。
@@ -1141,6 +1145,37 @@ function toggleDepartmentSelection(departmentId: number, selected: boolean) {
       }
     });
   departmentExcludedEmployeeIds.value = [...excludedEmployeeIds];
+}
+
+/**
+ * 部门复选框代表“部门内成员全部开启”，与后端保留的部门授权规则分开计算。
+ * 单个成员关闭时，部门授权仍保留并通过排除记录屏蔽该成员，避免误关同部门其他成员。
+ */
+function isDepartmentFullySelected(departmentId: number) {
+  if (!selectedDepartmentIds.value.includes(departmentId)) return false;
+  if (partiallySelectedDepartmentIds.value.includes(departmentId)) return false;
+  return !Object.values(loadedDirectoryEmployees).some((employee) =>
+    employeeDepartmentIds(employee).includes(departmentId)
+    && employeeEnabledDraft[employee.id] === false);
+}
+
+function refreshDepartmentPartialSelection(departmentIds: number[]) {
+  const partialIds = new Set(partiallySelectedDepartmentIds.value);
+  const excludedIds = new Set(departmentExcludedEmployeeIds.value);
+  departmentIds
+    .filter((departmentId) => selectedDepartmentIds.value.includes(departmentId))
+    .forEach((departmentId) => {
+      const hasKnownExcludedMember = [...excludedIds].some((employeeId) =>
+        (loadedEmployeeDepartmentIds[employeeId] ?? []).includes(departmentId));
+      const hasUnknownExcludedMember = [...excludedIds].some((employeeId) =>
+        !(loadedEmployeeDepartmentIds[employeeId]?.length));
+      if (hasKnownExcludedMember || (hasUnknownExcludedMember && partialIds.has(departmentId))) {
+        partialIds.add(departmentId);
+      } else {
+        partialIds.delete(departmentId);
+      }
+    });
+  partiallySelectedDepartmentIds.value = [...partialIds];
 }
 
 function employeeDepartmentIds(employee: DingEmployee) {
@@ -1169,6 +1204,17 @@ function handleEmployeePermissionChange(employee: DingEmployee, enabled: boolean
   if (enabled && belongsToRevokedDepartment) reenabledIds.add(employee.id);
   else reenabledIds.delete(employee.id);
   reenabledEmployeeIds.value = [...reenabledIds];
+
+  const selectedEmployeeDepartmentIds = employeeDepartmentIds(employee)
+    .filter((departmentId) => selectedDepartmentIds.value.includes(departmentId));
+  if (!enabled) {
+    partiallySelectedDepartmentIds.value = [...new Set([
+      ...partiallySelectedDepartmentIds.value,
+      ...selectedEmployeeDepartmentIds,
+    ])];
+  } else {
+    refreshDepartmentPartialSelection(selectedEmployeeDepartmentIds);
+  }
 }
 
 async function initializePermissionProfiles() {
@@ -1216,6 +1262,7 @@ async function loadPermissionProfile(subjectId: number) {
     departments: result.departments ?? [],
     employeeRules: result.employeeRules ?? [],
     departmentExcludedEmployeeIds: result.departmentExcludedEmployeeIds ?? [],
+    partiallySelectedDepartmentIds: result.partiallySelectedDepartmentIds ?? [],
     employeeCount: (result.employeeRules ?? []).length,
   };
   const index = permissionProfiles.value.findIndex((item) => item.id === profile.id);
@@ -1284,6 +1331,7 @@ function openPermissionEditor(targetType: "USER" | "DEPARTMENT") {
   revokedDepartmentIds.value = [];
   reenabledEmployeeIds.value = [];
   departmentExcludedEmployeeIds.value = [...(profile.departmentExcludedEmployeeIds ?? [])];
+  partiallySelectedDepartmentIds.value = [...(profile.partiallySelectedDepartmentIds ?? [])];
   Object.keys(employeeEnabledDraft).forEach((key) => delete employeeEnabledDraft[Number(key)]);
   Object.keys(employeePermissionEdited).forEach((key) => delete employeePermissionEdited[Number(key)]);
   Object.keys(loadedDirectoryEmployees).forEach((key) => delete loadedDirectoryEmployees[Number(key)]);
@@ -1342,6 +1390,7 @@ async function updateAllEmployeesVisibility(enabled: boolean) {
     profile.departments = result.departments ?? [];
     profile.employeeRules = result.employeeRules ?? [];
     profile.departmentExcludedEmployeeIds = result.departmentExcludedEmployeeIds ?? [];
+    profile.partiallySelectedDepartmentIds = result.partiallySelectedDepartmentIds ?? [];
     profile.employeeCount = profile.employeeRules.length;
     ElMessage.success(`全员可见已${profile.allEmployeesVisible ? "开启" : "关闭"}`);
   } catch (error) {
@@ -1417,6 +1466,7 @@ async function applyPermissionSelection() {
   });
   profile.employeeRules = [...rules.values()];
   profile.departmentExcludedEmployeeIds = [...departmentExcludedEmployeeIds.value];
+  profile.partiallySelectedDepartmentIds = [...partiallySelectedDepartmentIds.value];
   profile.employeeCount = profile.employeeRules.length;
   await savePermissionConfiguration();
 }
@@ -1631,7 +1681,7 @@ provide(financeLayoutKey, {
           <p v-if="permissionForm.targetType === 'ALL'" class="directory-result-heading">部门</p>
           <el-table v-if="permissionForm.targetType !== 'USER'" v-loading="directoryLoading" :data="directoryDepartments" :height="permissionForm.targetType === 'ALL' ? 230 : 390" @expand-change="handleDepartmentExpand">
           <el-table-column width="70">
-            <template #default="{ row }"><el-checkbox :model-value="selectedDepartmentIds.includes(row.id)" @change="toggleDepartmentSelection(row.id, Boolean($event))" /></template>
+            <template #default="{ row }"><el-checkbox :model-value="isDepartmentFullySelected(row.id)" @change="toggleDepartmentSelection(row.id, Boolean($event))" /></template>
           </el-table-column>
           <el-table-column type="expand" width="52">
             <template #default="{ row }">

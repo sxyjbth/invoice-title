@@ -24,5 +24,6 @@ public interface SubjectPermissionMapper {
     List<DingDepartmentVO> selectProfileDepartments(@Param("subjectId") Long subjectId);
     List<EmployeePermissionRuleVO> selectProfileEmployeeRules(@Param("subjectId") Long subjectId);
     List<Long> selectProfileDepartmentExcludedEmployeeIds(@Param("subjectId") Long subjectId);
+    List<Long> selectProfilePartiallySelectedDepartmentIds(@Param("subjectId") Long subjectId);
     long countEffectiveEmployees(@Param("subjectId") Long subjectId);
 }

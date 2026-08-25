@@ -376,7 +376,8 @@ class FinanceAdministrationCrudWebTest {
 
         assertThat(saved.statusCode()).isEqualTo(200);
         assertThat(saved.body())
-                .contains("\"visibleCount\":1", "\"departmentExcludedEmployeeIds\":[1]");
+                .contains("\"visibleCount\":1", "\"departmentExcludedEmployeeIds\":[1]",
+                        "\"partiallySelectedDepartmentIds\":[1]");
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM subject_department_employee_exclusion
                 WHERE subject_id = 1 AND department_id = 1 AND employee_id = 1
@@ -389,7 +390,8 @@ class FinanceAdministrationCrudWebTest {
                 .doesNotContain("示例员工");
 
         HttpResponse<String> profile = get(administrator, "/api/admin/subjects/1/permission-profile");
-        assertThat(profile.body()).contains("\"departmentExcludedEmployeeIds\":[1]");
+        assertThat(profile.body()).contains("\"departmentExcludedEmployeeIds\":[1]",
+                "\"partiallySelectedDepartmentIds\":[1]");
 
         HttpResponse<String> reopened = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
                 {"allEmployeeVisible":false,"departmentIds":[1],"employeeRules":[],
@@ -397,7 +399,8 @@ class FinanceAdministrationCrudWebTest {
                 """);
         assertThat(reopened.statusCode()).isEqualTo(200);
         assertThat(reopened.body())
-                .contains("\"visibleCount\":2", "\"departmentExcludedEmployeeIds\":[]", "\"id\":1");
+                .contains("\"visibleCount\":2", "\"departmentExcludedEmployeeIds\":[]",
+                        "\"partiallySelectedDepartmentIds\":[]", "\"id\":1");
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM subject_department_employee_exclusion WHERE subject_id = 1
                 """, Long.class)).isZero();

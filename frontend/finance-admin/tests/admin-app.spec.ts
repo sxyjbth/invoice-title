@@ -761,7 +761,7 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
-  it("部门已勾选时仍可在展开成员中单独关闭员工并提交部门排除名单", async () => {
+  it("部门成员关闭后取消部门勾选显示并提交部门排除名单", async () => {
     const request = mockPlatformPermissionDirectory();
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
@@ -785,6 +785,11 @@ describe("财务端发票抬头管理", () => {
     employeeSwitch?.click();
     await nextTick();
     expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
+    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
+      .find((row) => row.textContent?.includes("平台开发部"));
+    expect(departmentRow?.querySelector(".el-checkbox")?.classList.contains("is-checked")).toBe(false);
+    expect(document.body.querySelector('[aria-label="李晨的单独启用权限"]')
+      ?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
 
     Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
       .find((button) => button.textContent?.includes("确定选择"))!.click();
@@ -821,6 +826,9 @@ describe("财务端发票抬头管理", () => {
     expect(excludedSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
     expect(inheritedSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
     expect(excludedSwitch?.closest(".el-switch")?.classList.contains("is-disabled")).toBe(false);
+    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
+      .find((row) => row.textContent?.includes("平台开发部"));
+    expect(departmentRow?.querySelector(".el-checkbox")?.classList.contains("is-checked")).toBe(false);
     wrapper.unmount();
   });
 

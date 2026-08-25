@@ -73,6 +73,7 @@ public class SubjectPermissionServiceImpl implements ISubjectPermissionService {
         profile.setDepartments(mapper.selectProfileDepartments(subjectId));
         profile.setEmployeeRules(mapper.selectProfileEmployeeRules(subjectId));
         profile.setDepartmentExcludedEmployeeIds(mapper.selectProfileDepartmentExcludedEmployeeIds(subjectId));
+        profile.setPartiallySelectedDepartmentIds(mapper.selectProfilePartiallySelectedDepartmentIds(subjectId));
         return profile;
     }
 

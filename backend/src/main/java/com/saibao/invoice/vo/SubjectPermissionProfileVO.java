@@ -17,4 +17,6 @@ public class SubjectPermissionProfileVO {
     @Schema(description = "单独允许查看的员工规则") private List<EmployeePermissionRuleVO> employeeRules;
     @Schema(description = "在已授权部门中被单独关闭的员工目录主键 ID；已覆盖其全部当前部门授权边")
     private List<Long> departmentExcludedEmployeeIds;
+    @Schema(description = "存在员工排除记录的已授权部门目录主键 ID")
+    private List<Long> partiallySelectedDepartmentIds;
 }

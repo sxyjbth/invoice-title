@@ -111,6 +111,25 @@
         ORDER BY employee_id ASC
     </select>
 
+    <!-- 仅回显仍处于启用授权状态、且存在员工排除例外的部门。 -->
+    <select id="selectProfilePartiallySelectedDepartmentIds" resultType="long">
+        SELECT DISTINCT department_exclusion.department_id
+        FROM subject_department_employee_exclusion department_exclusion
+        INNER JOIN ding_department d
+          ON d.id = department_exclusion.department_id
+         AND d.status = 'ENABLED'
+        INNER JOIN subject_permission allow_department
+          ON allow_department.subject_id = department_exclusion.subject_id
+         AND allow_department.target_type = 'DEPARTMENT'
+         AND allow_department.target_corp_code = d.corp_code
+         AND allow_department.target_id = d.ding_department_id
+         AND allow_department.permission_effect = 'ALLOW'
+         AND allow_department.status = 'ENABLED'
+         AND allow_department.deleted = 0
+        WHERE department_exclusion.subject_id = #{subjectId}
+        ORDER BY department_exclusion.department_id ASC
+    </select>
+
     <select id="countEffectiveEmployees" resultType="long">
         SELECT COUNT(*)
         FROM ding_employee e
