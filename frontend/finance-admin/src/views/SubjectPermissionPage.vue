@@ -14,6 +14,11 @@ const {
   switchMenu,
   updateAllEmployeesVisibility,
 } = inject(financeLayoutKey)!;
+
+function selectVisibilityMode(allEmployeesVisible: boolean) {
+  if (!activePermissionProfile.value || activePermissionProfile.value.allEmployeesVisible === allEmployeesVisible) return;
+  void updateAllEmployeesVisibility(allEmployeesVisible);
+}
 </script>
 
 <template>
@@ -28,20 +33,58 @@ const {
 
       <section v-if="activePermissionProfile" class="permission-detail-card">
         <header><div><h2>{{ activePermissionProfile.subjectName }}</h2><p>配置哪些员工可以查看该主体及其已发布抬头</p></div><span>当前可见 {{ activePermissionProfile.visibleCount }} 人</span></header>
-        <div class="permission-level-row">
-          <span class="permission-level-icon"><el-icon><User /></el-icon></span>
-          <div class="permission-level-copy"><strong>全员可见</strong><p>开启后，所有在职员工均可查看</p></div>
-          <el-switch :model-value="activePermissionProfile.allEmployeesVisible" :loading="permissionSaving" :disabled="permissionSaving" aria-label="全员可见" @update:model-value="updateAllEmployeesVisibility" />
+        <div class="permission-visibility-section">
+          <h3>可见范围</h3>
+          <div class="permission-visibility-options" role="radiogroup" aria-label="主体可见范围">
+            <button
+              type="button"
+              role="radio"
+              aria-label="全员可见"
+              :aria-checked="activePermissionProfile.allEmployeesVisible"
+              :class="{ active: activePermissionProfile.allEmployeesVisible }"
+              :disabled="permissionSaving"
+              @click="selectVisibilityMode(true)"
+            >
+              <span class="permission-mode-radio" aria-hidden="true"></span>
+              <span class="permission-level-icon"><el-icon><User /></el-icon></span>
+              <span><strong>全员可见</strong><small>所有在职员工均可查看该主体及其已发布抬头</small></span>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-label="部分可见"
+              :aria-checked="!activePermissionProfile.allEmployeesVisible"
+              :class="{ active: !activePermissionProfile.allEmployeesVisible }"
+              :disabled="permissionSaving"
+              @click="selectVisibilityMode(false)"
+            >
+              <span class="permission-mode-radio" aria-hidden="true"></span>
+              <span class="permission-level-icon"><el-icon><OfficeBuilding /></el-icon></span>
+              <span><strong>部分可见</strong><small>按企业、部门与员工配置可查看人员</small></span>
+            </button>
+          </div>
         </div>
-        <div class="permission-level-row permission-level-expanded">
-          <span class="permission-level-icon"><el-icon><OfficeBuilding /></el-icon></span>
-          <div class="permission-level-copy"><strong>部门授权</strong><p>已选择 {{ activePermissionProfile.departments.length }} 个部门，包含子部门</p><div class="permission-tags"><span v-for="department in activePermissionProfile.departments" :key="department.id">{{ department.departmentName }} · {{ department.employeeCount }} 人</span></div></div>
-          <el-button @click="openPermissionEditor('DEPARTMENT')">编辑</el-button>
-        </div>
-        <div class="permission-level-row permission-level-expanded">
+        <div v-if="activePermissionProfile.allEmployeesVisible" class="permission-mode-summary permission-mode-summary-all">
           <span class="permission-level-icon"><el-icon><User /></el-icon></span>
-          <div class="permission-level-copy"><strong>员工授权</strong><p>单独授权 {{ activePermissionProfile.employeeCount }} 名员工（允许或拒绝均优先于部门）</p><div class="employee-avatar-list"><span v-for="employee in activePermissionProfile.employeeRules.slice(0, 4)" :key="employeeRuleId(employee)" :title="employee.effect === 'DENY' ? '单独拒绝' : '单独允许'">{{ employee.employeeName.slice(0, 1) }}</span><span v-if="activePermissionProfile.employeeCount > 4">+{{ activePermissionProfile.employeeCount - 4 }}</span></div></div>
-          <el-button @click="openPermissionEditor('USER')">编辑</el-button>
+          <div><strong>全员可见已开启</strong><p>该主体将对所有在职员工展示，无需再配置部门或个人权限。</p></div>
+        </div>
+        <div v-else class="permission-mode-summary permission-mode-summary-partial">
+          <div class="permission-mode-summary-heading">
+            <div><strong>已配置可见人员</strong><p>已选择 {{ activePermissionProfile.departments.length }} 个部门，个人允许或关闭规则优先于所属部门。</p></div>
+            <el-button type="primary" plain @click="openPermissionEditor('DEPARTMENT')">编辑部分可见范围</el-button>
+          </div>
+          <div class="permission-summary-stats">
+            <span><b>{{ activePermissionProfile.departments.length }}</b>个已选部门</span>
+            <span><b>{{ activePermissionProfile.visibleCount }}</b>名当前可见人员</span>
+            <span><b>{{ activePermissionProfile.employeeRules.length }}</b>条个人规则</span>
+          </div>
+          <div v-if="activePermissionProfile.departments.length" class="permission-tags">
+            <span v-for="department in activePermissionProfile.departments" :key="department.id">{{ department.departmentName }} · {{ department.employeeCount }} 人</span>
+          </div>
+          <div v-if="activePermissionProfile.employeeRules.length" class="employee-avatar-list">
+            <span v-for="employee in activePermissionProfile.employeeRules.slice(0, 6)" :key="employeeRuleId(employee)" :title="employee.effect === 'DENY' ? '单独关闭' : '单独开启'">{{ employee.employeeName.slice(0, 1) }}</span>
+            <span v-if="activePermissionProfile.employeeRules.length > 6">+{{ activePermissionProfile.employeeRules.length - 6 }}</span>
+          </div>
         </div>
         <footer><p>权限调整后实时生效，员工调整后按钉钉通讯录自动更新。</p></footer>
       </section>

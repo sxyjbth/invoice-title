@@ -337,6 +337,12 @@ const selectedDepartmentIds = ref<number[]>([]);
 const employeeEnabledDraft = reactive<Record<number, boolean>>({});
 const employeePermissionEdited = reactive<Record<number, boolean>>({});
 const employeePermissionStatus = ref<"ALL" | "ENABLED" | "DISABLED">("ALL");
+const authorizedEmployees = ref<DingEmployee[]>([]);
+const authorizedEmployeesLoading = ref(false);
+const authorizedEmployeeKeyword = ref("");
+const authorizedEmployeePageNum = ref(1);
+const authorizedEmployeePageSize = ref(10);
+const authorizedEmployeeTotal = ref(0);
 const selectedPermissionProfileId = ref(1);
 
 const titleForm = reactive({
@@ -382,7 +388,7 @@ function validateTitleForm() {
 const subjectForm = reactive({ name: "", status: "ENABLED" as "ENABLED" | "DISABLED", sortNo: 0 });
 const permissionForm = reactive({
   subjectName: "杭州主体",
-  targetType: "USER" as "USER" | "DEPARTMENT",
+  targetType: "DEPARTMENT" as "ALL" | "USER" | "DEPARTMENT",
   targetName: "",
   targetId: "",
 });
@@ -1003,9 +1009,25 @@ function searchDirectory() {
 
 function resetDirectorySearch() {
   directoryKeyword.value = "";
-  if (permissionForm.targetType === "DEPARTMENT") directoryCorpCode.value = "";
+  directoryCorpCode.value = "";
   directoryPageNum.value = 1;
   void loadDirectory();
+}
+
+function changePermissionResultType() {
+  directoryPageNum.value = 1;
+  void loadDirectory();
+}
+
+function searchAuthorizedEmployees() {
+  authorizedEmployeePageNum.value = 1;
+  void loadAuthorizedEmployees();
+}
+
+function resetAuthorizedEmployeeSearch() {
+  authorizedEmployeeKeyword.value = "";
+  authorizedEmployeePageNum.value = 1;
+  void loadAuthorizedEmployees();
 }
 
 function departmentMemberKey(department: DingDepartment) {
@@ -1158,27 +1180,36 @@ async function loadDirectory() {
   const profile = activePermissionProfile.value;
   if (!profile) return;
   directoryLoading.value = true;
-  const query = new URLSearchParams({
-    pageNum: String(directoryPageNum.value),
-    pageSize: String(directoryPageSize.value),
-  });
-  if (directoryKeyword.value.trim()) query.set("keyword", directoryKeyword.value.trim());
-  if (permissionForm.targetType === "USER") {
-    query.set("subjectId", String(profile.id));
-    if (employeePermissionStatus.value !== "ALL") query.set("permissionStatus", employeePermissionStatus.value);
-  } else if (directoryCorpCode.value) query.set("corpCode", directoryCorpCode.value);
-  const path = permissionForm.targetType === "USER" ? "employees" : "departments";
+  const createQuery = (targetType: "USER" | "DEPARTMENT") => {
+    const query = new URLSearchParams({
+      pageNum: String(directoryPageNum.value),
+      pageSize: String(directoryPageSize.value),
+    });
+    if (directoryKeyword.value.trim()) query.set("keyword", directoryKeyword.value.trim());
+    if (directoryCorpCode.value) query.set("corpCode", directoryCorpCode.value);
+    if (targetType === "USER") {
+      query.set("subjectId", String(profile.id));
+      if (employeePermissionStatus.value !== "ALL") query.set("permissionStatus", employeePermissionStatus.value);
+    }
+    return query;
+  };
+  const loadResult = async (targetType: "USER" | "DEPARTMENT") => {
+    const path = targetType === "USER" ? "employees" : "departments";
+    const response = await fetch(`/api/admin/directory/${path}?${createQuery(targetType)}`, { credentials: "include" });
+    return readApi<{ records: any[]; total: number }>(response, "通讯录加载失败");
+  };
   try {
-    const response = await fetch(`/api/admin/directory/${path}?${query}`, { credentials: "include" });
-    const result = await readApi<{ records: any[]; total: number }>(response, "通讯录加载失败");
-    directoryTotal.value = result.total;
-    if (permissionForm.targetType === "USER") {
-      directoryEmployees.value = result.records;
+    const departmentResult = permissionForm.targetType === "USER" ? null : await loadResult("DEPARTMENT");
+    const employeeResult = permissionForm.targetType === "DEPARTMENT" ? null : await loadResult("USER");
+    if (departmentResult) directoryDepartments.value = departmentResult.records;
+    if (employeeResult) {
+      directoryEmployees.value = employeeResult.records;
       directoryEmployees.value.forEach((employee) => {
         loadedDirectoryEmployees[employee.id] = employee;
-        employeeEnabledDraft[employee.id] = resolveEmployeeEnabled(employee);
+        if (!employeePermissionEdited[employee.id]) employeeEnabledDraft[employee.id] = resolveEmployeeEnabled(employee);
       });
-    } else directoryDepartments.value = result.records;
+    }
+    directoryTotal.value = (departmentResult?.total ?? 0) + (employeeResult?.total ?? 0);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "通讯录加载失败");
   } finally {
@@ -1195,18 +1226,21 @@ function openPermissionEditor(targetType: "USER" | "DEPARTMENT") {
   directoryCorpCode.value = "";
   directoryPageNum.value = 1;
   employeePermissionStatus.value = "ALL";
+  authorizedEmployeeKeyword.value = "";
+  authorizedEmployeePageNum.value = 1;
+  authorizedEmployees.value = [];
+  authorizedEmployeeTotal.value = 0;
   selectedDepartmentIds.value = profile.departments.map((department) => department.id);
   Object.keys(employeeEnabledDraft).forEach((key) => delete employeeEnabledDraft[Number(key)]);
   Object.keys(employeePermissionEdited).forEach((key) => delete employeePermissionEdited[Number(key)]);
   Object.keys(loadedDirectoryEmployees).forEach((key) => delete loadedDirectoryEmployees[Number(key)]);
   permissionDialogVisible.value = true;
-  if (targetType === "DEPARTMENT") void Promise.all([loadDirectoryOrganizations(), loadDirectory()]);
-  else void loadDirectory();
+  void Promise.all([loadDirectoryOrganizations(), loadDirectory(), loadAuthorizedEmployees()]);
 }
 
 function inheritedEmployeeEnabled(employee: DingEmployee) {
   const profile = activePermissionProfile.value;
-  const departmentIds = permissionDialogVisible.value && permissionForm.targetType === "DEPARTMENT"
+  const departmentIds = permissionDialogVisible.value && permissionForm.targetType !== "USER"
     ? selectedDepartmentIds.value
     : profile?.departments.map((department) => department.id) ?? [];
   return Boolean(profile && (profile.allEmployeesVisible
@@ -1256,6 +1290,40 @@ async function updateAllEmployeesVisibility(enabled: boolean) {
   }
 }
 
+async function loadAuthorizedEmployees() {
+  const profile = activePermissionProfile.value;
+  if (!profile) return;
+  authorizedEmployeesLoading.value = true;
+  const query = new URLSearchParams({
+    pageNum: String(authorizedEmployeePageNum.value),
+    pageSize: String(authorizedEmployeePageSize.value),
+    subjectId: String(profile.id),
+    permissionStatus: "ENABLED",
+  });
+  if (authorizedEmployeeKeyword.value.trim()) query.set("keyword", authorizedEmployeeKeyword.value.trim());
+  try {
+    const response = await fetch(`/api/admin/directory/employees?${query}`, { credentials: "include" });
+    const result = await readApi<{ records: DingEmployee[]; total: number }>(response, "已开权限人员加载失败");
+    authorizedEmployees.value = result.records ?? [];
+    authorizedEmployeeTotal.value = result.total ?? 0;
+    authorizedEmployees.value.forEach((employee) => {
+      loadedDirectoryEmployees[employee.id] = employee;
+      if (!employeePermissionEdited[employee.id]) employeeEnabledDraft[employee.id] = true;
+    });
+  } catch (error) {
+    authorizedEmployees.value = [];
+    authorizedEmployeeTotal.value = 0;
+    ElMessage.error(error instanceof Error ? error.message : "已开权限人员加载失败");
+  } finally {
+    authorizedEmployeesLoading.value = false;
+  }
+}
+
+function authorizedEmployeeSource(employee: DingEmployee) {
+  const explicitRule = activePermissionProfile.value?.employeeRules.find((rule) => employeeRuleId(rule) === employee.id);
+  return explicitRule?.effect === "ALLOW" ? "单独开启" : `来自${employee.departmentName || "已选部门"}`;
+}
+
 async function savePermissionConfiguration(): Promise<boolean> {
   const profile = activePermissionProfile.value;
   if (!profile) return false;
@@ -1286,18 +1354,16 @@ async function savePermissionConfiguration(): Promise<boolean> {
 async function applyPermissionSelection() {
   const profile = activePermissionProfile.value;
   if (!profile) return;
-  if (permissionForm.targetType === "DEPARTMENT") {
-    const selected = new Map(profile.departments.map((department) => [department.id, department]));
-    directoryDepartments.value.forEach((department) => {
-      if (selectedDepartmentIds.value.includes(department.id)) selected.set(department.id, department);
-      else selected.delete(department.id);
-    });
-    profile.departments = [...selected.values()];
-  }
+  const selected = new Map(profile.departments.map((department) => [department.id, department]));
+  directoryDepartments.value.forEach((department) => {
+    if (selectedDepartmentIds.value.includes(department.id)) selected.set(department.id, department);
+    else selected.delete(department.id);
+  });
+  profile.departments = [...selected.values()];
   const rules = new Map(profile.employeeRules.map((rule) => [employeeRuleId(rule), rule]));
   Object.entries(employeeEnabledDraft).forEach(([employeeId, enabled]) => {
     const numericEmployeeId = Number(employeeId);
-    if (permissionForm.targetType === "DEPARTMENT" && !employeePermissionEdited[numericEmployeeId]) return;
+    if (!employeePermissionEdited[numericEmployeeId]) return;
     const employee = loadedDirectoryEmployees[numericEmployeeId];
     if (!employee) return;
     const inheritedEnabled = inheritedEmployeeEnabled(employee);
@@ -1486,43 +1552,38 @@ provide(financeLayoutKey, {
       <template #footer><el-button @click="subjectDialogVisible = false">取消</el-button><el-button type="primary" :loading="subjectSaving" @click="saveSubject">保存主体</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="permissionDialogVisible" :title="permissionForm.targetType === 'DEPARTMENT' ? '编辑部门授权' : '编辑员工授权'" width="880px">
-      <section class="directory-picker">
-        <header>
-          <div><strong>{{ permissionForm.subjectName }}</strong><p>{{ permissionForm.targetType === 'USER' ? '开关展示最终权限，个人设置优先于部门授权' : '从通讯录部门中选择，无需手工填写部门 ID' }}</p></div>
-          <div class="directory-search-actions">
-            <div v-if="permissionForm.targetType === 'DEPARTMENT'" class="directory-organization-filter" aria-label="部门企业筛选">
-              <el-select v-model="directoryCorpCode" placeholder="全部企业" @change="changeDirectoryOrganization">
-                <el-option label="全部企业" value="" />
-                <el-option v-for="organization in directoryOrganizations" :key="organization.corpCode" :label="organization.corpName || organization.corpCode" :value="organization.corpCode" />
-              </el-select>
+    <el-dialog v-model="permissionDialogVisible" title="编辑部分可见范围" width="1180px" class="partial-permission-dialog">
+      <section class="partial-permission-editor">
+        <section class="directory-picker">
+          <header>
+            <div><strong>{{ permissionForm.subjectName }}</strong><p>从通讯录中选择部门或员工，个人设置优先于所属部门。</p></div>
+            <div class="directory-search-actions">
+              <div class="directory-organization-filter" aria-label="部分可见企业筛选">
+                <el-select v-model="directoryCorpCode" placeholder="全部企业" @change="changeDirectoryOrganization">
+                  <el-option label="全部企业" value="" />
+                  <el-option v-for="organization in directoryOrganizations" :key="organization.corpCode" :label="organization.corpName || organization.corpCode" :value="organization.corpCode" />
+                </el-select>
+              </div>
+              <el-input v-model="directoryKeyword" clearable placeholder="搜索部门、姓名、工号或手机号" :prefix-icon="Search" @keyup.enter="searchDirectory" />
+              <el-button type="primary" :icon="Search" @click="searchDirectory">搜索</el-button>
+              <el-button @click="resetDirectorySearch">重置</el-button>
             </div>
-            <el-input v-model="directoryKeyword" clearable :placeholder="permissionForm.targetType === 'USER' ? '搜索姓名、工号、部门或手机号' : '搜索部门名称'" :prefix-icon="Search" @keyup.enter="searchDirectory" />
-            <el-button type="primary" :icon="Search" @click="searchDirectory">搜索</el-button>
-            <el-button @click="resetDirectorySearch">重置</el-button>
-          </div>
-        </header>
-        <div v-if="permissionForm.targetType === 'USER'" class="directory-status-filter">
-          <span>权限状态</span>
-          <el-radio-group v-model="employeePermissionStatus" aria-label="员工权限状态筛选" size="small" @change="directoryPageNum = 1; loadDirectory()">
-            <el-radio-button value="ALL">全部</el-radio-button>
-            <el-radio-button value="ENABLED">已启用</el-radio-button>
-            <el-radio-button value="DISABLED">已关闭</el-radio-button>
+          </header>
+          <el-radio-group v-model="permissionForm.targetType" aria-label="部分可见结果类型" class="partial-result-type" size="small" @change="changePermissionResultType">
+            <el-radio-button value="ALL" aria-label="全部结果">全部结果</el-radio-button>
+            <el-radio-button value="DEPARTMENT" aria-label="部门结果">部门</el-radio-button>
+            <el-radio-button value="USER" aria-label="员工结果">员工</el-radio-button>
           </el-radio-group>
-        </div>
-        <el-table v-if="permissionForm.targetType === 'USER'" v-loading="directoryLoading" :data="directoryEmployees" height="360">
-          <el-table-column label="所属企业" min-width="180"><template #default="{ row }">{{ row.corpName || row.corpCode || '历史企业' }}</template></el-table-column>
-          <el-table-column prop="employeeName" label="姓名" min-width="100" />
-          <el-table-column prop="employeeNo" label="工号" min-width="100" />
-          <el-table-column prop="departmentName" label="部门" min-width="130" />
-          <el-table-column prop="mobile" label="手机号" min-width="130" />
-          <el-table-column label="查看权限" min-width="110" align="center">
-            <template #default="{ row }">
-              <el-switch v-model="employeeEnabledDraft[row.id]" :aria-label="`${row.employeeName}的查看权限`" :aria-checked="employeeEnabledDraft[row.id]" inline-prompt active-text="启" inactive-text="关" />
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-table v-else v-loading="directoryLoading" :data="directoryDepartments" height="360" @expand-change="handleDepartmentExpand">
+          <div v-if="permissionForm.targetType !== 'DEPARTMENT'" class="directory-status-filter">
+            <span>员工权限</span>
+            <el-radio-group v-model="employeePermissionStatus" aria-label="员工权限状态筛选" size="small" @change="directoryPageNum = 1; loadDirectory()">
+              <el-radio-button value="ALL">全部</el-radio-button>
+              <el-radio-button value="ENABLED">已启用</el-radio-button>
+              <el-radio-button value="DISABLED">已关闭</el-radio-button>
+            </el-radio-group>
+          </div>
+          <p v-if="permissionForm.targetType === 'ALL'" class="directory-result-heading">部门</p>
+          <el-table v-if="permissionForm.targetType !== 'USER'" v-loading="directoryLoading" :data="directoryDepartments" :height="permissionForm.targetType === 'ALL' ? 230 : 390" @expand-change="handleDepartmentExpand">
           <el-table-column width="70">
             <template #default="{ row }"><el-checkbox :model-value="selectedDepartmentIds.includes(row.id)" @change="toggleDepartmentSelection(row.id, Boolean($event))" /></template>
           </el-table-column>
@@ -1574,8 +1635,59 @@ provide(financeLayoutKey, {
           <el-table-column label="所属企业" min-width="180"><template #default="{ row }">{{ row.corpName || row.corpCode || '历史企业' }}</template></el-table-column>
           <el-table-column prop="departmentName" label="部门名称" min-width="240" />
           <el-table-column prop="employeeCount" label="在职员工" min-width="120"><template #default="{ row }">{{ row.employeeCount }} 人</template></el-table-column>
-        </el-table>
-        <el-pagination v-model:current-page="directoryPageNum" v-model:page-size="directoryPageSize" :total="directoryTotal" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadDirectory" @size-change="directoryPageNum = 1; loadDirectory()" />
+          </el-table>
+          <p v-if="permissionForm.targetType === 'ALL'" class="directory-result-heading">员工</p>
+          <el-table v-if="permissionForm.targetType !== 'DEPARTMENT'" v-loading="directoryLoading" :data="directoryEmployees" :height="permissionForm.targetType === 'ALL' ? 230 : 390">
+            <el-table-column label="所属企业" min-width="180"><template #default="{ row }">{{ row.corpName || row.corpCode || '历史企业' }}</template></el-table-column>
+            <el-table-column prop="employeeName" label="姓名" min-width="100" />
+            <el-table-column prop="employeeNo" label="工号" min-width="100" />
+            <el-table-column prop="departmentName" label="部门" min-width="130" />
+            <el-table-column prop="mobile" label="手机号" min-width="130" />
+            <el-table-column label="查看权限" min-width="110" align="center">
+              <template #default="{ row }">
+                <el-switch
+                  v-model="employeeEnabledDraft[row.id]"
+                  :aria-label="`${row.employeeName}的查看权限`"
+                  :aria-checked="employeeEnabledDraft[row.id]"
+                  inline-prompt
+                  active-text="启"
+                  inactive-text="关"
+                  @change="employeePermissionEdited[row.id] = true"
+                />
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-pagination v-model:current-page="directoryPageNum" v-model:page-size="directoryPageSize" :total="directoryTotal" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadDirectory" @size-change="directoryPageNum = 1; loadDirectory()" />
+        </section>
+        <aside class="authorized-people-panel" aria-label="已开权限人员">
+          <header><div><strong>已开权限人员</strong><span>{{ authorizedEmployeeTotal }} 人</span></div><p>展示当前最终可查看该主体的员工</p></header>
+          <div class="authorized-search">
+            <el-input v-model="authorizedEmployeeKeyword" clearable placeholder="搜索已开权限人员" :prefix-icon="Search" @keyup.enter="searchAuthorizedEmployees" />
+            <el-button :icon="Search" circle aria-label="搜索已开权限人员" @click="searchAuthorizedEmployees" />
+            <el-button circle aria-label="重置已开权限人员搜索" @click="resetAuthorizedEmployeeSearch">重</el-button>
+          </div>
+          <div v-loading="authorizedEmployeesLoading" class="authorized-people-list">
+            <article v-for="employee in authorizedEmployees" :key="employee.id">
+              <span class="authorized-avatar">{{ employee.employeeName.slice(0, 1) }}</span>
+              <div><strong>{{ employee.employeeName }}</strong><small>{{ employee.employeeNo }} · {{ authorizedEmployeeSource(employee) }}</small></div>
+              <el-switch
+                v-model="employeeEnabledDraft[employee.id]"
+                :aria-label="`${employee.employeeName}的已开权限`"
+                :aria-checked="employeeEnabledDraft[employee.id]"
+                @change="employeePermissionEdited[employee.id] = true"
+              />
+            </article>
+            <el-empty v-if="!authorizedEmployeesLoading && !authorizedEmployees.length" description="暂无已开权限人员" :image-size="70" />
+          </div>
+          <el-pagination
+            v-model:current-page="authorizedEmployeePageNum"
+            v-model:page-size="authorizedEmployeePageSize"
+            :total="authorizedEmployeeTotal"
+            layout="total, prev, pager, next"
+            size="small"
+            @current-change="loadAuthorizedEmployees"
+          />
+        </aside>
       </section>
       <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" @click="applyPermissionSelection">确定选择</el-button></template>
     </el-dialog>

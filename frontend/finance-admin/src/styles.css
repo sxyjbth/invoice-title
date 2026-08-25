@@ -97,6 +97,26 @@ nav a.active { border-left-color: var(--blue); color: #fff; background: #174579;
 .permission-detail-card > header h2 { margin: 0 0 7px; font-size: 19px; }
 .permission-detail-card > header p { margin: 0; color: #8b96a9; font-size: 13px; }
 .permission-detail-card > header > span { flex: none; padding: 7px 11px; border-radius: 7px; color: #347edb; background: #edf5ff; font-size: 13px; }
+.permission-visibility-section { padding: 22px 26px 24px; border-bottom: 1px solid var(--line); }
+.permission-visibility-section h3 { margin: 0 0 14px; font-size: 15px; }
+.permission-visibility-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.permission-visibility-options > button { position: relative; display: grid; grid-template-columns: 18px 42px minmax(0, 1fr); gap: 12px; align-items: center; min-height: 92px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: #fff; text-align: left; cursor: pointer; transition: border-color .18s ease, background .18s ease, box-shadow .18s ease; }
+.permission-visibility-options > button:hover { border-color: #91bfff; }
+.permission-visibility-options > button.active { border-color: #409eff; background: #f4f9ff; box-shadow: 0 0 0 2px rgba(64,158,255,.08); }
+.permission-visibility-options > button:disabled { cursor: wait; opacity: .7; }
+.permission-visibility-options strong, .permission-visibility-options small { display: block; }
+.permission-visibility-options strong { margin-bottom: 7px; font-size: 15px; }
+.permission-visibility-options small { color: #7d899c; font-size: 12px; line-height: 1.5; }
+.permission-mode-radio { width: 16px; height: 16px; border: 1px solid #bcc5d2; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 4px #fff; }
+.permission-visibility-options > button.active .permission-mode-radio { border-color: #409eff; background: #409eff; }
+.permission-mode-summary { padding: 24px 26px; border-bottom: 1px solid var(--line); }
+.permission-mode-summary-all { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; align-items: center; min-height: 116px; }
+.permission-mode-summary strong { display: block; margin-bottom: 7px; font-size: 16px; }
+.permission-mode-summary p { margin: 0; color: #7d899c; font-size: 13px; line-height: 1.6; }
+.permission-mode-summary-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.permission-summary-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+.permission-summary-stats span { padding: 13px 14px; border-radius: 8px; color: #667085; background: #f7f9fc; font-size: 12px; }
+.permission-summary-stats b { margin-right: 4px; color: #18243b; font-size: 18px; }
 .permission-level-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 14px; min-height: 94px; align-items: center; padding: 20px 26px; border-bottom: 1px solid var(--line); }
 .permission-level-expanded { min-height: 138px; align-items: start; padding-top: 24px; }
 .permission-level-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 10px; color: #1677ff; background: #edf5ff; font-size: 19px; }
@@ -135,6 +155,27 @@ nav a.active { border-left-color: var(--blue); color: #fff; background: #174579;
 .department-member-panel { padding: 12px 16px 14px; background: #f8faff; }
 .department-member-panel > .el-pagination { justify-content: flex-end; margin-top: 12px; }
 .department-member-panel .el-alert { margin-bottom: 8px; }
+.partial-permission-dialog .el-dialog__body { padding-top: 8px; }
+.partial-permission-editor { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 22px; min-height: 570px; }
+.partial-permission-editor > .directory-picker { min-width: 0; }
+.partial-permission-editor .directory-picker > header { display: block; margin-bottom: 14px; }
+.partial-permission-editor .directory-search-actions { justify-content: flex-start; margin-top: 14px; }
+.partial-result-type { margin-bottom: 12px; }
+.directory-result-heading { margin: 12px 0 7px; color: #667085; font-size: 13px; font-weight: 600; }
+.authorized-people-panel { display: flex; min-width: 0; flex-direction: column; padding-left: 20px; border-left: 1px solid var(--line); }
+.authorized-people-panel > header { margin-bottom: 14px; }
+.authorized-people-panel > header > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.authorized-people-panel > header strong { font-size: 16px; }
+.authorized-people-panel > header span { padding: 3px 8px; border-radius: 10px; color: #2879dc; background: #edf5ff; font-size: 12px; }
+.authorized-people-panel > header p { margin: 6px 0 0; color: #8b96a9; font-size: 12px; }
+.authorized-search { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; margin-bottom: 12px; }
+.authorized-people-list { min-height: 0; flex: 1; overflow-y: auto; border-top: 1px solid var(--line); }
+.authorized-people-list article { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 2px; border-bottom: 1px solid var(--line); }
+.authorized-avatar { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; color: #2879dc; background: #edf5ff; font-size: 13px; }
+.authorized-people-list article strong, .authorized-people-list article small { display: block; }
+.authorized-people-list article strong { margin-bottom: 4px; color: #18243b; font-size: 13px; }
+.authorized-people-list article small { overflow: hidden; color: #8b96a9; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.authorized-people-panel > .el-pagination { justify-content: flex-end; margin-top: 14px; }
 .binding-form { margin-top: 20px; }
 button:focus-visible { outline: 3px solid rgba(22,119,255,.24); outline-offset: 2px; }
 
@@ -146,4 +187,6 @@ button:focus-visible { outline: 3px solid rgba(22,119,255,.24); outline-offset: 
   .permission-config-layout { grid-template-columns: 230px minmax(0, 1fr); }
   .directory-picker > header { grid-template-columns: 1fr; }
   .directory-search-actions { justify-content: flex-start; flex-wrap: wrap; }
+  .partial-permission-editor { grid-template-columns: 1fr; }
+  .authorized-people-panel { min-height: 360px; padding-top: 20px; padding-left: 0; border-top: 1px solid var(--line); border-left: 0; }
 }

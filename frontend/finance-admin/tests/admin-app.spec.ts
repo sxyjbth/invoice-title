@@ -43,6 +43,26 @@ async function clickMenu(wrapper: ReturnType<typeof mount>, label: string) {
   await vi.waitFor(() => expect(wrapper.get("nav a.active").text()).toContain(label));
 }
 
+async function openPartialVisibilityEditor(
+  wrapper: ReturnType<typeof mount>,
+  resultType: "DEPARTMENT" | "USER",
+) {
+  const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
+  const editButton = permissionPage.findAll("button")
+    .find((item) => item.text().includes("编辑部分可见范围"));
+  if (!editButton) throw new Error("未找到编辑部分可见范围入口");
+  await editButton.trigger("click");
+  await flushPromises();
+
+  const resultTypeLabel = resultType === "DEPARTMENT" ? "部门结果" : "员工结果";
+  const resultTypeButton = document.body.querySelector<HTMLElement>(`[aria-label="${resultTypeLabel}"]`);
+  if (!resultTypeButton) throw new Error(`未找到${resultTypeLabel}切换入口`);
+  resultTypeButton.click();
+  await nextTick();
+  await flushPromises();
+  return permissionPage;
+}
+
 afterEach(() => {
   document.body.innerHTML = "";
   vi.restoreAllMocks();
@@ -396,22 +416,82 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
-  it("主体权限按主体聚合配置全员、部门和员工授权", async () => {
+  it("主体权限只提供全员可见和部分可见两个互斥模式", async () => {
     const wrapper = await mountAdmin();
     await clickMenu(wrapper, "主体权限");
 
     const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
     expect(permissionPage.text()).toContain("选择主体");
     expect(permissionPage.text()).toContain("当前可见 128 人");
-    expect(permissionPage.text()).toContain("全员可见");
-    expect(permissionPage.text()).toContain("部门授权");
+    const visibilityModes = permissionPage.get('[aria-label="主体可见范围"]');
+    expect(visibilityModes.get('[aria-label="全员可见"]').attributes("aria-checked")).toBe("false");
+    expect(visibilityModes.get('[aria-label="部分可见"]').attributes("aria-checked")).toBe("true");
+    expect(permissionPage.text()).toContain("已配置可见人员");
+    expect(permissionPage.text()).toContain("编辑部分可见范围");
     expect(permissionPage.text()).toContain("技术中心 · 86 人");
-    expect(permissionPage.text()).toContain("员工授权");
-    expect(permissionPage.text()).toContain("单独授权 12 名员工");
+    expect(permissionPage.text()).not.toContain("部门授权");
+    expect(permissionPage.text()).not.toContain("员工授权");
     expect(permissionPage.text()).not.toContain("保存权限");
 
     await permissionPage.findAll("button").find((item) => item.text().includes("北京主体"))!.trigger("click");
     expect(permissionPage.text()).toContain("当前可见 46 人");
+  });
+
+  it("部分可见编辑器统一筛选部门和员工并在右侧展示已开权限人员", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/admin/directory/organizations")) {
+        return new Response(JSON.stringify([
+          { corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司" },
+        ]), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/departments")) {
+        return new Response(JSON.stringify({ records: [{
+          id: 11,
+          corpCode: "sebo",
+          corpName: "赛宝绿创能源技术（上海）有限公司",
+          dingDepartmentId: "ding-dept-platform",
+          departmentName: "平台开发部",
+          employeeCount: 6,
+        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/employees")) {
+        return new Response(JSON.stringify({ records: [{
+          id: 99,
+          corpCode: "sebo",
+          corpName: "赛宝绿创能源技术（上海）有限公司",
+          dingUserId: "ding-sun-xinyao",
+          employeeNo: "R04952",
+          employeeName: "孙鑫尧",
+          departmentId: 11,
+          departmentName: "平台开发部",
+          mobile: "13936725713",
+          permissionEnabled: true,
+        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    await wrapper.get('[aria-label="主体权限配置"]').findAll("button")
+      .find((item) => item.text().includes("编辑部分可见范围"))!.trigger("click");
+    await flushPromises();
+
+    expect(document.body.textContent).toContain("编辑部分可见范围");
+    expect(document.body.querySelector('[aria-label="部分可见企业筛选"]')).not.toBeNull();
+    expect(document.body.querySelector('input[placeholder="搜索部门、姓名、工号或手机号"]')).not.toBeNull();
+    expect(document.body.querySelector('[aria-label="部分可见结果类型"]')).not.toBeNull();
+    expect(document.body.querySelector('[aria-label="已开权限人员"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("孙鑫尧");
+    expect(document.body.textContent).toContain("来自平台开发部");
+    expect(document.body.querySelector('input[placeholder="搜索已开权限人员"]')).not.toBeNull();
+    expect(request.mock.calls.some(([url]) => {
+      const parsed = new URL(String(url), "http://localhost");
+      return parsed.pathname.endsWith("/directory/employees")
+        && parsed.searchParams.get("subjectId") === "1"
+        && parsed.searchParams.get("permissionStatus") === "ENABLED";
+    })).toBe(true);
+    wrapper.unmount();
   });
 
   it("进入主体权限页面时聚合加载所有主体的真实可见人数", () => {
@@ -433,42 +513,46 @@ describe("财务端发票抬头管理", () => {
   });
 
   it("员工权限以启用开关呈现部门授权结果并支持按最终状态筛选", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ records: [{
-      id: 1,
-      dingUserId: "ding-employee-001",
-      employeeNo: "SB0001",
-      employeeName: "陈一",
-      departmentId: 1,
-      departmentName: "技术中心",
-      mobile: "13800000001",
-      permissionEnabled: true,
-    }], total: 1 }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/admin/directory/organizations")) {
+        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/departments")) {
+        return new Response(JSON.stringify({ records: [], total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/employees")) {
+        return new Response(JSON.stringify({ records: [{
+          id: 1,
+          dingUserId: "ding-employee-001",
+          employeeNo: "SB0001",
+          employeeName: "陈一",
+          departmentId: 1,
+          departmentName: "技术中心",
+          mobile: "13800000001",
+          permissionEnabled: true,
+        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    });
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
 
-    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
-    await permissionPage.findAll("button").find((item) => item.text().includes("编辑") && item.element.closest(".permission-level-row")?.textContent?.includes("员工授权"))!.trigger("click");
-    await nextTick();
-    await flushPromises();
-    expect(document.body.querySelector('input[placeholder="搜索姓名、工号、部门或手机号"]')).not.toBeNull();
+    const permissionPage = await openPartialVisibilityEditor(wrapper, "USER");
+    expect(document.body.querySelector('input[placeholder="搜索部门、姓名、工号或手机号"]')).not.toBeNull();
     expect(Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button")).some((button) => button.textContent?.includes("搜索"))).toBe(true);
     expect(Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button")).some((button) => button.textContent?.includes("重置"))).toBe(true);
-    expect(document.body.textContent).toContain("权限状态");
+    expect(document.body.textContent).toContain("员工权限");
     expect(document.body.textContent).toContain("已启用");
     expect(document.body.textContent).toContain("已关闭");
     expect(document.body.textContent).not.toContain("继承部门");
     expect(document.body.querySelector('[aria-label="陈一的查看权限"]')?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
     expect(document.body.textContent).not.toContain("钉钉对象 ID");
 
-    const close = document.body.querySelector<HTMLButtonElement>(".el-dialog__headerbtn");
-    close?.click();
+    document.body.querySelector<HTMLElement>('[aria-label="部门结果"]')?.click();
     await nextTick();
-    await permissionPage.findAll("button").find((item) => item.text().includes("编辑") && item.element.closest(".permission-level-row")?.textContent?.includes("部门授权"))!.trigger("click");
-    await nextTick();
-    expect(document.body.textContent).toContain("从通讯录部门中选择");
+    await flushPromises();
+    expect(document.body.textContent).toContain("从通讯录中选择部门或员工");
     expect(document.body.textContent).not.toContain("请输入部门名称");
     wrapper.unmount();
   });
@@ -514,12 +598,9 @@ describe("财务端发票抬头管理", () => {
     });
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
-    await permissionPage.findAll("button").find((item) => item.text().includes("编辑")
-      && item.element.closest(".permission-level-row")?.textContent?.includes("部门授权"))!.trigger("click");
-    await flushPromises();
+    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
 
-    expect(document.body.querySelector('[aria-label="部门企业筛选"]')).not.toBeNull();
+    expect(document.body.querySelector('[aria-label="部分可见企业筛选"]')).not.toBeNull();
     expect(document.body.textContent).toContain("全部企业");
     expect(document.body.querySelector(".el-table__expand-icon")).not.toBeNull();
 
@@ -613,10 +694,7 @@ describe("财务端发票抬头管理", () => {
     });
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
-    await permissionPage.findAll("button").find((item) => item.text().includes("编辑")
-      && item.element.closest(".permission-level-row")?.textContent?.includes("部门授权"))!.trigger("click");
-    await flushPromises();
+    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
 
     (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
     await flushPromises();
@@ -652,27 +730,34 @@ describe("财务端发票抬头管理", () => {
   });
 
   it("员工授权弹窗确认选择后立即保存个人权限", async () => {
-    const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ records: [{
-      id: 99,
-      corpCode: "sebo",
-      corpName: "赛宝绿创能源技术（上海）有限公司",
-      dingUserId: "ding-sun-xinyao",
-      employeeNo: "R04952",
-      employeeName: "孙鑫尧",
-      departmentId: 99,
-      departmentName: "平台开发部",
-      mobile: "13936725713",
-      permissionEnabled: false,
-    }], total: 1 }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
+    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/admin/directory/organizations")) {
+        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/departments")) {
+        return new Response(JSON.stringify({ records: [], total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/employees")) {
+        return new Response(JSON.stringify({ records: [{
+          id: 99,
+          corpCode: "sebo",
+          corpName: "赛宝绿创能源技术（上海）有限公司",
+          dingUserId: "ding-sun-xinyao",
+          employeeNo: "R04952",
+          employeeName: "孙鑫尧",
+          departmentId: 99,
+          departmentName: "平台开发部",
+          mobile: "13936725713",
+          permissionEnabled: false,
+        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    });
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
 
-    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
-    await permissionPage.findAll("button").find((item) => item.text().includes("编辑") && item.element.closest(".permission-level-row")?.textContent?.includes("员工授权"))!.trigger("click");
-    await flushPromises();
+    await openPartialVisibilityEditor(wrapper, "USER");
     (document.body.querySelector('[aria-label="孙鑫尧的查看权限"]') as HTMLElement).click();
     await nextTick();
     Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
@@ -689,6 +774,12 @@ describe("财务端发票抬头管理", () => {
   it("员工授权翻页后仍保存前一页的权限修改", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
+      if (url.includes("/api/admin/directory/organizations")) {
+        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/departments")) {
+        return new Response(JSON.stringify({ records: [], total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       if (url.includes("/api/admin/directory/employees")) {
         const pageNum = new URL(url, "http://localhost").searchParams.get("pageNum");
         const id = pageNum === "2" ? 102 : 101;
@@ -707,9 +798,7 @@ describe("财务端发票抬头管理", () => {
     });
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
-    await permissionPage.findAll("button").find((item) => item.text().includes("编辑") && item.element.closest(".permission-level-row")?.textContent?.includes("员工授权"))!.trigger("click");
-    await flushPromises();
+    await openPartialVisibilityEditor(wrapper, "USER");
 
     (document.body.querySelector('[aria-label="第一页员工的查看权限"]') as HTMLElement).click();
     layoutVm(wrapper).directoryPageNum = 2;
@@ -725,21 +814,30 @@ describe("财务端发票抬头管理", () => {
   });
 
   it("后端 employeeId 字段返回的既有员工授权可以正确回显", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ records: [{
-      id: 99,
-      corpCode: "sebo",
-      corpName: "赛宝绿创能源技术（上海）有限公司",
-      dingUserId: "ding-sun-xinyao",
-      employeeNo: "R04952",
-      employeeName: "孙鑫尧",
-      departmentId: 99,
-      departmentName: "平台开发部",
-      mobile: "13936725713",
-      permissionEnabled: true,
-    }], total: 1 }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/admin/directory/organizations")) {
+        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/departments")) {
+        return new Response(JSON.stringify({ records: [], total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/admin/directory/employees")) {
+        return new Response(JSON.stringify({ records: [{
+          id: 99,
+          corpCode: "sebo",
+          corpName: "赛宝绿创能源技术（上海）有限公司",
+          dingUserId: "ding-sun-xinyao",
+          employeeNo: "R04952",
+          employeeName: "孙鑫尧",
+          departmentId: 99,
+          departmentName: "平台开发部",
+          mobile: "13936725713",
+          permissionEnabled: true,
+        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    });
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
     layoutVm(wrapper).permissionProfiles[0].employeeRules = [{
@@ -751,9 +849,7 @@ describe("财务端发票抬头管理", () => {
       effect: "ALLOW",
     }];
 
-    const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
-    await permissionPage.findAll("button").find((item) => item.text().includes("编辑") && item.element.closest(".permission-level-row")?.textContent?.includes("员工授权"))!.trigger("click");
-    await flushPromises();
+    await openPartialVisibilityEditor(wrapper, "USER");
 
     expect(document.body.querySelector('[aria-label="孙鑫尧的查看权限"]')?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
     wrapper.unmount();
