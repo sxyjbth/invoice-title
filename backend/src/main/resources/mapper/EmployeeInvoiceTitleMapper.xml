@@ -30,6 +30,13 @@
                   AND allowed_department.permission_effect = 'ALLOW'
                   AND allowed_department.status = 'ENABLED'
                   AND allowed_department.deleted = 0
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM subject_department_employee_exclusion department_exclusion
+                      WHERE department_exclusion.subject_id = s.id
+                        AND department_exclusion.department_id = employee_department.department_id
+                        AND department_exclusion.employee_id = current_employee.id
+                  )
             )
         )
     </sql>

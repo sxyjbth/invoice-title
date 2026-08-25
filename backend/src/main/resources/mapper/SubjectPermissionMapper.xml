@@ -44,6 +44,20 @@
         DELETE FROM subject_permission WHERE subject_id = #{subjectId}
     </delete>
 
+    <delete id="deleteDepartmentEmployeeExclusionsBySubjectId">
+        DELETE FROM subject_department_employee_exclusion WHERE subject_id = #{subjectId}
+    </delete>
+
+    <insert id="insertDepartmentEmployeeExclusions">
+        INSERT INTO subject_department_employee_exclusion
+        (subject_id, department_id, employee_id, created_by, created_at, updated_by, updated_at)
+        VALUES
+        <foreach collection="memberships" item="membership" separator=",">
+            (#{subjectId}, #{membership.departmentId}, #{membership.employeeId}, #{operatorUserId}, CURRENT_TIMESTAMP,
+             #{operatorUserId}, CURRENT_TIMESTAMP)
+        </foreach>
+    </insert>
+
     <select id="selectAllowedDepartmentIdsForUpdate" resultType="long">
         SELECT d.id
         FROM subject_permission p
@@ -90,6 +104,13 @@
         ORDER BY e.corp_code ASC, e.employee_no ASC, e.id ASC
     </select>
 
+    <select id="selectProfileDepartmentExcludedEmployeeIds" resultType="long">
+        SELECT DISTINCT employee_id
+        FROM subject_department_employee_exclusion
+        WHERE subject_id = #{subjectId}
+        ORDER BY employee_id ASC
+    </select>
+
     <select id="countEffectiveEmployees" resultType="long">
         SELECT COUNT(*)
         FROM ding_employee e
@@ -114,6 +135,13 @@
                     AND allow_department.subject_id = s.id AND allow_department.target_type = 'DEPARTMENT'
                     AND allow_department.permission_effect = 'ALLOW' AND allow_department.status = 'ENABLED'
                     AND allow_department.deleted = 0 AND d.status = 'ENABLED'
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM subject_department_employee_exclusion department_exclusion
+                        WHERE department_exclusion.subject_id = s.id
+                          AND department_exclusion.department_id = employee_department.department_id
+                          AND department_exclusion.employee_id = e.id
+                    )
               )
           )
     </select>

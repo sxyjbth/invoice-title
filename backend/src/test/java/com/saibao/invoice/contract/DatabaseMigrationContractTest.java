@@ -162,4 +162,21 @@ class DatabaseMigrationContractTest {
                 .contains("正向允许查看")
                 .contains("历史DENY保留兼容但不再参与权限判定");
     }
+
+    @Test
+    void departmentEmployeeExclusionMigrationUsesScopedUniqueRowsWithoutMembershipForeignKey() throws IOException {
+        Path migration = Path.of("src", "main", "resources", "db", "migration",
+                "V110__add_subject_department_employee_exclusion.sql");
+
+        assertThat(migration).exists();
+        String sql = Files.readString(migration, StandardCharsets.UTF_8);
+        assertThat(sql)
+                .contains("CREATE TABLE subject_department_employee_exclusion")
+                .contains("UNIQUE KEY uk_subject_department_employee_exclusion (subject_id, department_id, employee_id)")
+                .contains("KEY idx_subject_department_employee_exclusion_lookup (subject_id, employee_id, department_id)")
+                .contains("FOREIGN KEY (subject_id) REFERENCES invoice_subject (id)")
+                .contains("FOREIGN KEY (department_id) REFERENCES ding_department (id)")
+                .contains("FOREIGN KEY (employee_id) REFERENCES ding_employee (id)")
+                .doesNotContain("REFERENCES ding_employee_department");
+    }
 }

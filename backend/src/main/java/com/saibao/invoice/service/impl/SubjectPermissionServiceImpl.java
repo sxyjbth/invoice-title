@@ -3,6 +3,7 @@ package com.saibao.invoice.service.impl;
 import com.saibao.invoice.domain.SubjectPermission;
 import com.saibao.invoice.domain.DingDepartment;
 import com.saibao.invoice.domain.DingEmployee;
+import com.saibao.invoice.domain.EmployeeDepartmentMembership;
 import com.saibao.invoice.domain.InvoiceSubject;
 import com.saibao.invoice.dto.EmployeePermissionRuleDTO;
 import com.saibao.invoice.dto.SubjectPermissionPageQueryDTO;
@@ -71,6 +72,7 @@ public class SubjectPermissionServiceImpl implements ISubjectPermissionService {
         profile.setVisibleCount(mapper.countEffectiveEmployees(subjectId));
         profile.setDepartments(mapper.selectProfileDepartments(subjectId));
         profile.setEmployeeRules(mapper.selectProfileEmployeeRules(subjectId));
+        profile.setDepartmentExcludedEmployeeIds(mapper.selectProfileDepartmentExcludedEmployeeIds(subjectId));
         return profile;
     }
 
@@ -81,6 +83,7 @@ public class SubjectPermissionServiceImpl implements ISubjectPermissionService {
                                                   String operatorUserId) {
         requireSubject(subjectId);
         List<Long> departmentIds = distinct(request.getDepartmentIds());
+        List<Long> requestedRevokedDepartmentIds = distinct(request.getRevokedDepartmentIds());
         List<Long> employeeIds = request.getEmployeeRules() == null
                 ? List.of()
                 : request.getEmployeeRules().stream()
@@ -88,6 +91,17 @@ public class SubjectPermissionServiceImpl implements ISubjectPermissionService {
                 .map(EmployeePermissionRuleDTO::getEmployeeId)
                 .collect(Collectors.collectingAndThen(Collectors.toCollection(LinkedHashSet::new), ArrayList::new));
         List<Long> reenabledEmployeeIds = distinct(request.getReenabledEmployeeIds());
+        List<Long> requestedExcludedEmployeeIds = distinct(request.getDepartmentExcludedEmployeeIds());
+        boolean allEmployeeVisible = Boolean.TRUE.equals(request.getAllEmployeeVisible());
+        if (allEmployeeVisible && !requestedExcludedEmployeeIds.isEmpty()) {
+            throw new IllegalArgumentException("全员可见开启时不能单独关闭部门员工");
+        }
+        if (!Collections.disjoint(requestedExcludedEmployeeIds, reenabledEmployeeIds)) {
+            throw new IllegalArgumentException("部门排除员工不能同时明确重新启用");
+        }
+        if (!Collections.disjoint(requestedExcludedEmployeeIds, employeeIds)) {
+            throw new IllegalArgumentException("部门排除员工不能同时存在于员工允许规则中");
+        }
         if (!employeeIds.containsAll(reenabledEmployeeIds)) {
             throw new IllegalArgumentException("明确重新启用的员工必须同时存在于员工允许规则中");
         }
@@ -108,21 +122,42 @@ public class SubjectPermissionServiceImpl implements ISubjectPermissionService {
         if (!activeEmployeeIds.containsAll(reenabledEmployeeIds)) {
             throw new IllegalArgumentException("明确重新启用的员工不存在、已离职或尚未同步");
         }
+        List<DingEmployee> requestedExcludedEmployees = requestedExcludedEmployeeIds.isEmpty()
+                ? List.of() : directoryMapper.selectEmployeesByIds(requestedExcludedEmployeeIds);
+        if (requestedExcludedEmployees.size() != requestedExcludedEmployeeIds.size()) {
+            throw new IllegalArgumentException("排除员工不存在、已离职或尚未同步");
+        }
 
         if (subjectMapper.updateAllEmployeeVisible(subjectId,
-                Boolean.TRUE.equals(request.getAllEmployeeVisible()), operatorUserId) == 0) {
+                allEmployeeVisible, operatorUserId) == 0) {
             throw new IllegalArgumentException("展示主体不存在：" + subjectId);
         }
-        List<Long> revokedDepartmentIds = new ArrayList<>(mapper.selectAllowedDepartmentIdsForUpdate(subjectId));
+        Set<Long> revokedDepartmentIds = new LinkedHashSet<>(mapper.selectAllowedDepartmentIdsForUpdate(subjectId));
+        revokedDepartmentIds.removeAll(departmentIds);
+        revokedDepartmentIds.addAll(requestedRevokedDepartmentIds);
+        // 最终仍选中的部门代表本次批量开启，优先于陈旧的撤销部门元数据。
         revokedDepartmentIds.removeAll(departmentIds);
         Set<Long> revokedDepartmentMemberIds = revokedDepartmentIds.isEmpty()
                 ? new LinkedHashSet<>()
-                : new LinkedHashSet<>(directoryMapper.selectActiveEmployeeIdsByDepartmentIds(revokedDepartmentIds));
+                : new LinkedHashSet<>(directoryMapper.selectActiveEmployeeIdsByDepartmentIds(
+                        new ArrayList<>(revokedDepartmentIds)));
         revokedDepartmentMemberIds.removeAll(reenabledEmployeeIds);
         List<DingEmployee> finalEmployees = employees.stream()
                 .filter(employee -> !revokedDepartmentMemberIds.contains(employee.getId()))
                 .toList();
 
+        Set<Long> finalExcludedEmployeeIds = new LinkedHashSet<>(requestedExcludedEmployeeIds);
+        if (!allEmployeeVisible) {
+            // 取消部门是全员批量关闭：多部门员工仍命中最终已选部门时，屏蔽其每一条剩余部门授权边。
+            finalExcludedEmployeeIds.addAll(revokedDepartmentMemberIds);
+        }
+        List<EmployeeDepartmentMembership> exclusionMemberships = allEmployeeVisible
+                || departmentIds.isEmpty() || finalExcludedEmployeeIds.isEmpty()
+                ? List.of()
+                : directoryMapper.selectActiveEmployeeDepartmentMemberships(
+                        departmentIds, new ArrayList<>(finalExcludedEmployeeIds));
+
+        mapper.deleteDepartmentEmployeeExclusionsBySubjectId(subjectId);
         mapper.deleteBySubjectId(subjectId);
         departments.forEach(department -> mapper.insert(newPermission(
                 subjectId, "DEPARTMENT", department.getCorpCode(), department.getDingDepartmentId(), department.getDepartmentName(),
@@ -130,6 +165,9 @@ public class SubjectPermissionServiceImpl implements ISubjectPermissionService {
         finalEmployees.forEach(employee -> mapper.insert(newPermission(
                 subjectId, "USER", employee.getCorpCode(), employee.getDingUserId(), employee.getEmployeeName(),
                 "ALLOW", false, operatorUserId)));
+        if (!exclusionMemberships.isEmpty()) {
+            mapper.insertDepartmentEmployeeExclusions(subjectId, exclusionMemberships, operatorUserId);
+        }
         return getProfile(subjectId);
     }
 

@@ -30,6 +30,13 @@
                   AND department_allow.target_type = 'DEPARTMENT'
                   AND department_allow.permission_effect = 'ALLOW'
                   AND department_allow.status = 'ENABLED' AND department_allow.deleted = 0
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM subject_department_employee_exclusion department_exclusion
+                      WHERE department_exclusion.subject_id = #{subjectId}
+                        AND department_exclusion.department_id = employee_department.department_id
+                        AND department_exclusion.employee_id = e.id
+                  )
             ) THEN 1
             ELSE 0
         END
@@ -94,6 +101,28 @@
             #{employeeId}
         </foreach>
         ORDER BY ed.employee_id ASC, ed.is_primary DESC, ed.department_id ASC
+    </select>
+
+    <select id="selectActiveEmployeeDepartmentMemberships"
+            resultType="com.saibao.invoice.domain.EmployeeDepartmentMembership">
+        SELECT employee_department.employee_id, employee_department.department_id
+        FROM ding_employee_department employee_department
+        INNER JOIN ding_employee employee_directory
+          ON employee_directory.id = employee_department.employee_id
+         AND employee_directory.status = 'ACTIVE'
+        INNER JOIN ding_department department_directory
+          ON department_directory.id = employee_department.department_id
+         AND department_directory.status = 'ENABLED'
+         AND department_directory.corp_code = employee_directory.corp_code
+        WHERE employee_department.department_id IN
+        <foreach collection="departmentIds" item="departmentId" open="(" separator="," close=")">
+            #{departmentId}
+        </foreach>
+          AND employee_department.employee_id IN
+        <foreach collection="employeeIds" item="employeeId" open="(" separator="," close=")">
+            #{employeeId}
+        </foreach>
+        ORDER BY employee_department.employee_id ASC, employee_department.department_id ASC
     </select>
 
     <select id="selectEmployeeByIdentity" resultType="com.saibao.invoice.domain.DingEmployee">

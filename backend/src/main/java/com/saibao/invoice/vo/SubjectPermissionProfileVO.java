@@ -15,4 +15,6 @@ public class SubjectPermissionProfileVO {
     @Schema(description = "按全员、部门和员工正向授权并集计算后的实际可见人数") private Long visibleCount;
     @Schema(description = "已授权部门") private List<DingDepartmentVO> departments;
     @Schema(description = "单独允许查看的员工规则") private List<EmployeePermissionRuleVO> employeeRules;
+    @Schema(description = "在已授权部门中被单独关闭的员工目录主键 ID；已覆盖其全部当前部门授权边")
+    private List<Long> departmentExcludedEmployeeIds;
 }

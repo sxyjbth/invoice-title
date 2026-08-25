@@ -18,6 +18,10 @@ public interface DingDirectoryMapper {
     List<DingEmployee> selectEmployeePage(EmployeeDirectoryPageQueryDTO query);
     List<EmployeeDepartmentMembership> selectEmployeeDepartmentMembershipsByEmployeeIds(
             @Param("employeeIds") List<Long> employeeIds);
+    /** 返回指定在职员工与最终已选有效部门之间的全部授权边。 */
+    List<EmployeeDepartmentMembership> selectActiveEmployeeDepartmentMemberships(
+            @Param("departmentIds") List<Long> departmentIds,
+            @Param("employeeIds") List<Long> employeeIds);
     DingEmployee selectEmployeeByIdentity(@Param("corpCode") String corpCode,
                                           @Param("dingUserId") String dingUserId);
     DingEmployee selectActiveEmployeeById(@Param("id") Long id);

@@ -81,6 +81,7 @@ type SubjectPermissionProfile = {
   allEmployeesVisible: boolean;
   departments: DingDepartment[];
   employeeRules: EmployeeRule[];
+  departmentExcludedEmployeeIds?: number[];
   employeeCount: number;
 };
 
@@ -339,6 +340,7 @@ const loadedEmployeeDepartmentIds = reactive<Record<number, number[]>>({});
 const selectedDepartmentIds = ref<number[]>([]);
 const revokedDepartmentIds = ref<number[]>([]);
 const reenabledEmployeeIds = ref<number[]>([]);
+const departmentExcludedEmployeeIds = ref<number[]>([]);
 const employeeEnabledDraft = reactive<Record<number, boolean>>({});
 const employeePermissionEdited = reactive<Record<number, boolean>>({});
 const employeePermissionStatus = ref<"ALL" | "ENABLED" | "DISABLED">("ALL");
@@ -1124,15 +1126,21 @@ function toggleDepartmentSelection(departmentId: number, selected: boolean) {
   selectedDepartmentIds.value = [...ids];
   revokedDepartmentIds.value = [...revokedIds];
 
-  // 部门选择是强联动操作：按员工的全部所属部门重新计算，覆盖此前单独编辑。
+  const excludedEmployeeIds = new Set(departmentExcludedEmployeeIds.value);
+  // 部门选择是强联动操作：本次勾选或取消统一覆盖该部门已加载成员的个人编辑状态。
   Object.values(loadedDirectoryEmployees)
     .filter((employee) => employeeDepartmentIds(employee).includes(departmentId))
     .forEach((employee) => {
-      employeeEnabledDraft[employee.id] = employeeDepartmentIds(employee)
-        .some((employeeDepartmentId) => ids.has(employeeDepartmentId));
+      employeeEnabledDraft[employee.id] = selected;
       employeePermissionEdited[employee.id] = true;
       reenabledEmployeeIds.value = reenabledEmployeeIds.value.filter((employeeId) => employeeId !== employee.id);
+      if (selected || !employeeDepartmentIds(employee).some((employeeDepartmentId) => ids.has(employeeDepartmentId))) {
+        excludedEmployeeIds.delete(employee.id);
+      } else {
+        excludedEmployeeIds.add(employee.id);
+      }
     });
+  departmentExcludedEmployeeIds.value = [...excludedEmployeeIds];
 }
 
 function employeeDepartmentIds(employee: DingEmployee) {
@@ -1150,6 +1158,11 @@ function employeeInheritedBySelectedDepartment(employee: DingEmployee) {
 
 function handleEmployeePermissionChange(employee: DingEmployee, enabled: boolean) {
   employeePermissionEdited[employee.id] = true;
+  const excludedEmployeeIds = new Set(departmentExcludedEmployeeIds.value);
+  if (!enabled && employeeInheritedBySelectedDepartment(employee)) excludedEmployeeIds.add(employee.id);
+  else excludedEmployeeIds.delete(employee.id);
+  departmentExcludedEmployeeIds.value = [...excludedEmployeeIds];
+
   const reenabledIds = new Set(reenabledEmployeeIds.value);
   const belongsToRevokedDepartment = employeeDepartmentIds(employee)
     .some((departmentId) => revokedDepartmentIds.value.includes(departmentId));
@@ -1202,6 +1215,7 @@ async function loadPermissionProfile(subjectId: number) {
     allEmployeesVisible: Boolean(result.allEmployeeVisible),
     departments: result.departments ?? [],
     employeeRules: result.employeeRules ?? [],
+    departmentExcludedEmployeeIds: result.departmentExcludedEmployeeIds ?? [],
     employeeCount: (result.employeeRules ?? []).length,
   };
   const index = permissionProfiles.value.findIndex((item) => item.id === profile.id);
@@ -1269,6 +1283,7 @@ function openPermissionEditor(targetType: "USER" | "DEPARTMENT") {
   selectedDepartmentIds.value = profile.departments.map((department) => department.id);
   revokedDepartmentIds.value = [];
   reenabledEmployeeIds.value = [];
+  departmentExcludedEmployeeIds.value = [...(profile.departmentExcludedEmployeeIds ?? [])];
   Object.keys(employeeEnabledDraft).forEach((key) => delete employeeEnabledDraft[Number(key)]);
   Object.keys(employeePermissionEdited).forEach((key) => delete employeePermissionEdited[Number(key)]);
   Object.keys(loadedDirectoryEmployees).forEach((key) => delete loadedDirectoryEmployees[Number(key)]);
@@ -1293,14 +1308,15 @@ function employeeRuleId(rule: EmployeeRule) {
   return rule.id ?? rule.employeeId;
 }
 
-/** 最终权限取全员、部门与员工 ALLOW 规则的并集；遗留 DENY 规则不再生效。 */
+/** 部门排除或本次撤销部门优先关闭成员；其余权限取全员、部门与员工 ALLOW 规则的并集。 */
 function resolveEmployeeEnabled(employee: DingEmployee) {
+  if (departmentExcludedEmployeeIds.value.includes(employee.id)) return false;
   const explicitRule = activePermissionProfile.value?.employeeRules.find((rule) => employeeRuleId(rule) === employee.id);
   const revokedByDepartment = employeeDepartmentIds(employee)
     .some((departmentId) => revokedDepartmentIds.value.includes(departmentId));
   const explicitlyReenabled = reenabledEmployeeIds.value.includes(employee.id);
-  return inheritedEmployeeEnabled(employee)
-    || (explicitRule?.effect === "ALLOW" && (!revokedByDepartment || explicitlyReenabled));
+  if (revokedByDepartment && !explicitlyReenabled) return false;
+  return inheritedEmployeeEnabled(employee) || explicitRule?.effect === "ALLOW";
 }
 
 async function updateAllEmployeesVisibility(enabled: boolean) {
@@ -1325,6 +1341,7 @@ async function updateAllEmployeesVisibility(enabled: boolean) {
     profile.visibleCount = result.visibleCount ?? 0;
     profile.departments = result.departments ?? [];
     profile.employeeRules = result.employeeRules ?? [];
+    profile.departmentExcludedEmployeeIds = result.departmentExcludedEmployeeIds ?? [];
     profile.employeeCount = profile.employeeRules.length;
     ElMessage.success(`全员可见已${profile.allEmployeesVisible ? "开启" : "关闭"}`);
   } catch (error) {
@@ -1352,6 +1369,7 @@ async function savePermissionConfiguration(): Promise<boolean> {
           : profile.departments.map((department) => department.id),
         revokedDepartmentIds: revokedDepartmentIds.value,
         reenabledEmployeeIds: reenabledEmployeeIds.value,
+        departmentExcludedEmployeeIds: departmentExcludedEmployeeIds.value,
         employeeRules: profile.employeeRules
           .filter((rule) => rule.effect === "ALLOW")
           .map((rule) => ({ employeeId: employeeRuleId(rule), effect: "ALLOW" })),
@@ -1391,6 +1409,7 @@ async function applyPermissionSelection() {
     else rules.set(employee.id, { ...employee, effect: "ALLOW" });
   });
   profile.employeeRules = [...rules.values()];
+  profile.departmentExcludedEmployeeIds = [...departmentExcludedEmployeeIds.value];
   profile.employeeCount = profile.employeeRules.length;
   if (await savePermissionConfiguration()) permissionDialogVisible.value = false;
 }
@@ -1630,7 +1649,6 @@ provide(financeLayoutKey, {
                         v-model="employeeEnabledDraft[employee.id]"
                         :aria-label="`${employee.employeeName}的单独启用权限`"
                         :aria-checked="employeeEnabledDraft[employee.id]"
-                        :disabled="employeeInheritedBySelectedDepartment(employee)"
                         inline-prompt
                         active-text="启"
                         inactive-text="关"
@@ -1670,7 +1688,6 @@ provide(financeLayoutKey, {
                   v-model="employeeEnabledDraft[row.id]"
                   :aria-label="`${row.employeeName}的查看权限`"
                   :aria-checked="employeeEnabledDraft[row.id]"
-                  :disabled="employeeInheritedBySelectedDepartment(row)"
                   inline-prompt
                   active-text="启"
                   inactive-text="关"

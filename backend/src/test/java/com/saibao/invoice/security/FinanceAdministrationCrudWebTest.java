@@ -1,5 +1,6 @@
 package com.saibao.invoice.security;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +47,11 @@ class FinanceAdministrationCrudWebTest {
         administrator = sessionClient();
         assertThat(send(administrator, "POST", "/api/auth/login", "{\"username\":\"admin\",\"password\":\"root\"}").statusCode())
                 .isEqualTo(200);
+    }
+
+    @AfterEach
+    void clearDepartmentEmployeeExclusions() {
+        jdbcTemplate.update("DELETE FROM subject_department_employee_exclusion");
     }
 
     @Test
@@ -359,6 +365,206 @@ class FinanceAdministrationCrudWebTest {
         assertThat(disabledAfterRemoval.statusCode()).isEqualTo(200);
         assertThat(disabledAfterRemoval.body())
                 .contains("示例员工", "研发员工", "财务员工", "采购员工", "\"total\":4");
+    }
+
+    @Test
+    void selectedDepartmentCanExcludeOneMemberAndEchoTheExclusion() throws Exception {
+        HttpResponse<String> saved = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[1],"employeeRules":[],
+                 "departmentExcludedEmployeeIds":[1]}
+                """);
+
+        assertThat(saved.statusCode()).isEqualTo(200);
+        assertThat(saved.body())
+                .contains("\"visibleCount\":1", "\"departmentExcludedEmployeeIds\":[1]");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM subject_department_employee_exclusion
+                WHERE subject_id = 1 AND department_id = 1 AND employee_id = 1
+                """, Long.class)).isEqualTo(1L);
+
+        HttpResponse<String> enabled = get(administrator,
+                "/api/admin/directory/employees?pageNum=1&pageSize=10&subjectId=1&permissionStatus=ENABLED");
+        assertThat(enabled.body())
+                .contains("研发员工", "\"permissionEnabled\":true", "\"total\":1")
+                .doesNotContain("示例员工");
+
+        HttpResponse<String> profile = get(administrator, "/api/admin/subjects/1/permission-profile");
+        assertThat(profile.body()).contains("\"departmentExcludedEmployeeIds\":[1]");
+
+        HttpResponse<String> reopened = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[1],"employeeRules":[],
+                 "departmentExcludedEmployeeIds":[]}
+                """);
+        assertThat(reopened.statusCode()).isEqualTo(200);
+        assertThat(reopened.body())
+                .contains("\"visibleCount\":2", "\"departmentExcludedEmployeeIds\":[]", "\"id\":1");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM subject_department_employee_exclusion WHERE subject_id = 1
+                """, Long.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM subject_permission
+                WHERE subject_id = 1 AND target_type = 'DEPARTMENT' AND target_id = 'ding-dept-tech'
+                """, Long.class)).isEqualTo(1L);
+    }
+
+    @Test
+    void multiDepartmentEmployeeIsExcludedFromEverySelectedDepartmentEdge() throws Exception {
+        jdbcTemplate.update("""
+                INSERT INTO ding_employee_department (employee_id, department_id, is_primary)
+                VALUES (1, 2, 0)
+                """);
+        try {
+            HttpResponse<String> saved = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                    {"allEmployeeVisible":false,"departmentIds":[1,2],"employeeRules":[],
+                     "departmentExcludedEmployeeIds":[1]}
+                    """);
+
+            assertThat(saved.statusCode()).isEqualTo(200);
+            assertThat(saved.body())
+                    .contains("\"visibleCount\":2", "\"departmentExcludedEmployeeIds\":[1]");
+            assertThat(jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM subject_department_employee_exclusion
+                    WHERE subject_id = 1 AND employee_id = 1
+                    """, Long.class)).isEqualTo(2L);
+
+            HttpResponse<String> enabled = get(administrator,
+                    "/api/admin/directory/employees?pageNum=1&pageSize=10&subjectId=1&permissionStatus=ENABLED");
+            assertThat(enabled.body())
+                    .contains("财务员工", "研发员工", "\"total\":2")
+                    .doesNotContain("示例员工");
+        } finally {
+            jdbcTemplate.update("DELETE FROM ding_employee_department WHERE employee_id = 1 AND department_id = 2");
+        }
+    }
+
+    @Test
+    void allEmployeeVisibilityRejectsDepartmentEmployeeExclusions() throws Exception {
+        HttpResponse<String> response = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":true,"departmentIds":[1],"employeeRules":[],
+                 "departmentExcludedEmployeeIds":[1]}
+                """);
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("全员可见开启时不能单独关闭部门员工");
+    }
+
+    @Test
+    void departmentEmployeeExclusionRejectsConflictingPositiveRules() throws Exception {
+        HttpResponse<String> employeeAllowConflict = send(administrator, "PUT",
+                "/api/admin/subjects/1/permission-profile", """
+                        {"allEmployeeVisible":false,"departmentIds":[1],
+                         "employeeRules":[{"employeeId":1,"effect":"ALLOW"}],
+                         "departmentExcludedEmployeeIds":[1]}
+                        """);
+        assertThat(employeeAllowConflict.statusCode()).isEqualTo(400);
+        assertThat(employeeAllowConflict.body()).contains("部门排除员工不能同时存在于员工允许规则中");
+
+        HttpResponse<String> reenabledConflict = send(administrator, "PUT",
+                "/api/admin/subjects/1/permission-profile", """
+                        {"allEmployeeVisible":false,"departmentIds":[1],
+                         "employeeRules":[{"employeeId":1,"effect":"ALLOW"}],
+                         "reenabledEmployeeIds":[1],"departmentExcludedEmployeeIds":[1]}
+                        """);
+        assertThat(reenabledConflict.statusCode()).isEqualTo(400);
+        assertThat(reenabledConflict.body()).contains("部门排除员工不能同时明确重新启用");
+    }
+
+    @Test
+    void staleUnselectedDepartmentExclusionIsDroppedButInactiveEmployeeRollsBackTheSave() throws Exception {
+        HttpResponse<String> baseline = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[1],"employeeRules":[]}
+                """);
+        assertThat(baseline.statusCode()).isEqualTo(200);
+
+        HttpResponse<String> staleUnselectedDepartmentMember = send(administrator, "PUT",
+                "/api/admin/subjects/1/permission-profile", """
+                        {"allEmployeeVisible":false,"departmentIds":[1],"employeeRules":[],
+                         "departmentExcludedEmployeeIds":[2]}
+                        """);
+        assertThat(staleUnselectedDepartmentMember.statusCode()).isEqualTo(200);
+        assertThat(staleUnselectedDepartmentMember.body())
+                .contains("\"visibleCount\":2", "\"departmentExcludedEmployeeIds\":[]");
+
+        HttpResponse<String> inactiveEmployee = send(administrator, "PUT",
+                "/api/admin/subjects/1/permission-profile", """
+                        {"allEmployeeVisible":false,"departmentIds":[1],"employeeRules":[],
+                         "departmentExcludedEmployeeIds":[999]}
+                        """);
+        assertThat(inactiveEmployee.statusCode()).isEqualTo(400);
+        assertThat(inactiveEmployee.body()).contains("排除员工不存在、已离职或尚未同步");
+
+        HttpResponse<String> profile = get(administrator, "/api/admin/subjects/1/permission-profile");
+        assertThat(profile.body())
+                .contains("\"visibleCount\":2", "\"departmentExcludedEmployeeIds\":[]");
+    }
+
+    @Test
+    void revokedDepartmentClosesItsMultiDepartmentMembersAcrossRemainingSelectedDepartments() throws Exception {
+        jdbcTemplate.update("""
+                INSERT INTO ding_employee_department (employee_id, department_id, is_primary)
+                VALUES (1, 2, 0)
+                """);
+        try {
+            HttpResponse<String> initial = send(administrator, "PUT",
+                    "/api/admin/subjects/1/permission-profile", """
+                            {"allEmployeeVisible":false,"departmentIds":[1,2],"employeeRules":[]}
+                            """);
+            assertThat(initial.statusCode()).isEqualTo(200);
+
+            HttpResponse<String> revoked = send(administrator, "PUT",
+                    "/api/admin/subjects/1/permission-profile", """
+                            {"allEmployeeVisible":false,"departmentIds":[2],"employeeRules":[],
+                             "revokedDepartmentIds":[1],"reenabledEmployeeIds":[]}
+                            """);
+
+            assertThat(revoked.statusCode()).isEqualTo(200);
+            assertThat(revoked.body())
+                    .contains("\"visibleCount\":1", "\"departmentExcludedEmployeeIds\":[1]");
+            assertThat(jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM subject_department_employee_exclusion
+                    WHERE subject_id = 1 AND department_id = 2 AND employee_id = 1
+                    """, Long.class)).isEqualTo(1L);
+
+            HttpResponse<String> enabled = get(administrator,
+                    "/api/admin/directory/employees?pageNum=1&pageSize=10&subjectId=1&permissionStatus=ENABLED");
+            assertThat(enabled.body())
+                    .contains("财务员工", "\"total\":1")
+                    .doesNotContain("示例员工", "研发员工");
+        } finally {
+            jdbcTemplate.update("DELETE FROM subject_department_employee_exclusion WHERE employee_id = 1");
+            jdbcTemplate.update("DELETE FROM ding_employee_department WHERE employee_id = 1 AND department_id = 2");
+        }
+    }
+
+    @Test
+    void revokedDepartmentKeepsMultiDepartmentMemberWhenExplicitlyReenabled() throws Exception {
+        jdbcTemplate.update("""
+                INSERT INTO ding_employee_department (employee_id, department_id, is_primary)
+                VALUES (1, 2, 0)
+                """);
+        try {
+            assertThat(send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                    {"allEmployeeVisible":false,"departmentIds":[1,2],"employeeRules":[]}
+                    """).statusCode()).isEqualTo(200);
+
+            HttpResponse<String> saved = send(administrator, "PUT",
+                    "/api/admin/subjects/1/permission-profile", """
+                            {"allEmployeeVisible":false,"departmentIds":[2],
+                             "employeeRules":[{"employeeId":1,"effect":"ALLOW"}],
+                             "revokedDepartmentIds":[1],"reenabledEmployeeIds":[1]}
+                            """);
+
+            assertThat(saved.statusCode()).isEqualTo(200);
+            assertThat(saved.body())
+                    .contains("\"visibleCount\":2", "\"departmentExcludedEmployeeIds\":[]", "示例员工");
+            assertThat(jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM subject_department_employee_exclusion
+                    WHERE subject_id = 1 AND employee_id = 1
+                    """, Long.class)).isZero();
+        } finally {
+            jdbcTemplate.update("DELETE FROM subject_department_employee_exclusion WHERE employee_id = 1");
+            jdbcTemplate.update("DELETE FROM ding_employee_department WHERE employee_id = 1 AND department_id = 2");
+        }
     }
 
     @Test

@@ -19,7 +19,7 @@ public class SubjectPermissionProfileSaveDTO {
     @Schema(description = "允许查看的部门目录主键 ID 列表；服务端自动解析钉钉部门 ID")
     private List<Long> departmentIds = new ArrayList<>();
 
-    @Schema(description = "兼容前端上报的本次取消部门 ID 列表；服务端会基于数据库原部门与本次部门独立推导撤销集合，不依赖此字段保障权限一致性")
+    @Schema(description = "本次批量取消的部门目录主键 ID；服务端会与数据库原部门和本次部门推导的撤销集合合并，关闭这些部门的全部在职成员")
     private List<Long> revokedDepartmentIds = new ArrayList<>();
 
     @Valid
@@ -28,4 +28,7 @@ public class SubjectPermissionProfileSaveDTO {
 
     @Schema(description = "取消部门后又明确单独启用的员工目录主键 ID 列表；必须同时出现在员工允许规则中")
     private List<Long> reenabledEmployeeIds = new ArrayList<>();
+
+    @Schema(description = "在最终已选部门中明确单独关闭的员工目录主键 ID；服务端按员工全部已选部门归属生成授权边例外")
+    private List<Long> departmentExcludedEmployeeIds = new ArrayList<>();
 }
