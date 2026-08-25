@@ -1376,8 +1376,15 @@ async function savePermissionConfiguration(): Promise<boolean> {
       }),
     });
     if (!response.ok) await readApi(response, "权限保存失败");
-    if (!testMode) await loadPermissionProfile(profile.id);
     ElMessage.success(`${profile.subjectName}权限已保存并立即生效`);
+    // 保存后继续停留在编辑器内，资料刷新失败也不能将已成功的保存误报为失败。
+    if (!testMode) {
+      try {
+        await loadPermissionProfile(profile.id);
+      } catch {
+        ElMessage.warning("权限已保存，但最新权限信息刷新失败，请稍后重新进入查看");
+      }
+    }
     return true;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "权限保存失败");
@@ -1411,7 +1418,7 @@ async function applyPermissionSelection() {
   profile.employeeRules = [...rules.values()];
   profile.departmentExcludedEmployeeIds = [...departmentExcludedEmployeeIds.value];
   profile.employeeCount = profile.employeeRules.length;
-  if (await savePermissionConfiguration()) permissionDialogVisible.value = false;
+  await savePermissionConfiguration();
 }
 
 provide(financeLayoutKey, {
@@ -1699,7 +1706,7 @@ provide(financeLayoutKey, {
           <el-pagination v-model:current-page="directoryPageNum" v-model:page-size="directoryPageSize" :total="directoryTotal" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadDirectory" @size-change="directoryPageNum = 1; loadDirectory()" />
         </section>
       </section>
-      <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" @click="applyPermissionSelection">确定选择</el-button></template>
+      <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" :loading="permissionSaving" @click="applyPermissionSelection">确定选择</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="titleBindingVisible" :title="bindingSubject ? `为${bindingSubject.name}绑定抬头` : '绑定抬头'" width="560px">

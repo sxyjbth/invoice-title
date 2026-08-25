@@ -550,6 +550,39 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
+  it("部分可见权限保存成功后保持编辑弹窗并独立刷新权限资料", () => {
+    const saveStart = adminSource.indexOf("async function savePermissionConfiguration");
+    const applyStart = adminSource.indexOf("async function applyPermissionSelection", saveStart);
+    const saveSource = adminSource.slice(saveStart, applyStart);
+
+    expect(saveSource).not.toContain("permissionDialogVisible.value = false");
+    expect(saveSource).toContain("loadPermissionProfile(profile.id)");
+  });
+
+  it("点击确定选择只保存权限并保持弹窗，点击取消后才关闭", async () => {
+    mockPlatformPermissionDirectory();
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
+
+    const confirmButton = Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("确定选择"));
+    expect(confirmButton).toBeTruthy();
+    confirmButton?.click();
+    await flushPromises();
+
+    expect(layoutVm(wrapper).permissionDialogVisible).toBe(true);
+
+    const cancelButton = Array.from(document.body.querySelectorAll<HTMLButtonElement>(".partial-permission-dialog button"))
+      .find((button) => button.textContent?.trim() === "取消");
+    expect(cancelButton).toBeTruthy();
+    cancelButton?.click();
+    await nextTick();
+
+    expect(layoutVm(wrapper).permissionDialogVisible).toBe(false);
+    wrapper.unmount();
+  });
+
   it("进入主体权限页面时聚合加载所有主体的真实可见人数", () => {
     expect(adminSource).toMatch(
       /await loadPermissionProfiles\(permissionProfiles\.value\.map\(\(profile\) => profile\.id\), loadPermissionProfile\)/,
@@ -613,8 +646,8 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
-  it("员工与部门授权搜索框缩小为原布局约一半并保留右侧操作按钮", () => {
-    expect(adminStyles).toContain(".directory-search-actions .el-input { width: 240px;");
+  it("员工与部门授权搜索框保持紧凑并完整显示搜索提示", () => {
+    expect(adminStyles).toContain(".directory-search-actions .el-input { width: 320px;");
     expect(adminStyles).toContain(".directory-search-actions { display: flex;");
   });
 
