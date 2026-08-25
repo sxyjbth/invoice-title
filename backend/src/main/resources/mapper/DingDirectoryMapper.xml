@@ -1,18 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.saibao.invoice.mapper.DingDirectoryMapper">
-    <!-- 最终权限优先级：个人关闭 > 个人启用 > 全员启用 > 部门启用 > 默认关闭。 -->
+    <!-- 最终权限采用正向授权并集：全员可见、个人启用或任一部门启用命中即为可见。 -->
     <sql id="effectiveEmployeePermission">
         CASE
-            WHEN EXISTS (
-                SELECT 1 FROM subject_permission user_deny
-                WHERE user_deny.subject_id = #{subjectId}
-                  AND user_deny.target_type = 'USER'
-                  AND user_deny.target_corp_code = e.corp_code
-                  AND user_deny.target_id = e.ding_user_id
-                  AND user_deny.permission_effect = 'DENY'
-                  AND user_deny.status = 'ENABLED' AND user_deny.deleted = 0
-            ) THEN 0
             WHEN EXISTS (
                 SELECT 1 FROM subject_permission user_allow
                 WHERE user_allow.subject_id = #{subjectId}
@@ -27,16 +18,16 @@
                 WHERE s.id = #{subjectId} AND s.all_employee_visible = 1 AND s.deleted = 0
             ) THEN 1
             WHEN EXISTS (
-                SELECT 1 FROM subject_permission department_allow
-                INNER JOIN ding_employee_department employee_department
-                  ON employee_department.employee_id = e.id
+                SELECT 1 FROM ding_employee_department employee_department
                 INNER JOIN ding_department employee_department_directory
                   ON employee_department_directory.id = employee_department.department_id
                  AND employee_department_directory.status = 'ENABLED'
-                WHERE department_allow.subject_id = #{subjectId}
+                INNER JOIN subject_permission department_allow
+                  ON department_allow.target_corp_code = employee_department_directory.corp_code
+                 AND department_allow.target_id = employee_department_directory.ding_department_id
+                WHERE employee_department.employee_id = e.id
+                  AND department_allow.subject_id = #{subjectId}
                   AND department_allow.target_type = 'DEPARTMENT'
-                  AND department_allow.target_corp_code = employee_department_directory.corp_code
-                  AND department_allow.target_id = employee_department_directory.ding_department_id
                   AND department_allow.permission_effect = 'ALLOW'
                   AND department_allow.status = 'ENABLED' AND department_allow.deleted = 0
             ) THEN 1
@@ -93,6 +84,18 @@
         LIMIT #{pageSize} OFFSET #{offset}
     </select>
 
+    <select id="selectEmployeeDepartmentMembershipsByEmployeeIds"
+            resultType="com.saibao.invoice.domain.EmployeeDepartmentMembership">
+        SELECT ed.employee_id, ed.department_id
+        FROM ding_employee_department ed
+        INNER JOIN ding_department d ON d.id = ed.department_id AND d.status = 'ENABLED'
+        WHERE ed.employee_id IN
+        <foreach collection="employeeIds" item="employeeId" open="(" separator="," close=")">
+            #{employeeId}
+        </foreach>
+        ORDER BY ed.employee_id ASC, ed.is_primary DESC, ed.department_id ASC
+    </select>
+
     <select id="selectEmployeeByIdentity" resultType="com.saibao.invoice.domain.DingEmployee">
         SELECT id, corp_code, corp_name, corp_id, ding_user_id, union_id, employee_no, employee_name, department_id, department_name,
                mobile, status, last_synced_at, updated_at
@@ -112,6 +115,18 @@
         WHERE status = 'ACTIVE' AND id IN
         <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         ORDER BY employee_no ASC, id ASC
+    </select>
+
+    <!-- 员工可能同时属于多个部门，DISTINCT 保证撤销多个部门时每名在职员工只返回一次。 -->
+    <select id="selectActiveEmployeeIdsByDepartmentIds" resultType="long">
+        SELECT DISTINCT e.id
+        FROM ding_employee e
+        INNER JOIN ding_employee_department ed ON ed.employee_id = e.id
+        WHERE e.status = 'ACTIVE' AND ed.department_id IN
+        <foreach collection="departmentIds" item="departmentId" open="(" separator="," close=")">
+            #{departmentId}
+        </foreach>
+        ORDER BY e.id ASC
     </select>
 
     <sql id="departmentConditions">

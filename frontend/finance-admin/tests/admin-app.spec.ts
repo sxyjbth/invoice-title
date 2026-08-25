@@ -63,6 +63,60 @@ async function openPartialVisibilityEditor(
   return permissionPage;
 }
 
+function mockPlatformPermissionDirectory() {
+  const employees = [
+    {
+      id: 101,
+      corpCode: "sebo",
+      corpName: "赛宝绿创能源技术（上海）有限公司",
+      dingUserId: "ding-employee-sun",
+      employeeNo: "R04952",
+      employeeName: "孙鑫尧",
+      departmentId: 11,
+      departmentName: "平台开发部",
+      mobile: "13936725713",
+    },
+    {
+      id: 102,
+      corpCode: "sebo",
+      corpName: "赛宝绿创能源技术（上海）有限公司",
+      dingUserId: "ding-employee-li",
+      employeeNo: "R01411",
+      employeeName: "李晨",
+      departmentId: 11,
+      departmentName: "平台开发部",
+      mobile: "18223148993",
+    },
+  ];
+
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = new URL(String(input), "http://localhost");
+    if (url.pathname.endsWith("/directory/organizations")) {
+      return new Response(JSON.stringify([
+        { corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司" },
+      ]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.pathname.endsWith("/directory/departments")) {
+      return new Response(JSON.stringify({ records: [{
+        id: 11,
+        corpCode: "sebo",
+        corpName: "赛宝绿创能源技术（上海）有限公司",
+        dingDepartmentId: "ding-dept-platform",
+        departmentName: "平台开发部",
+        employeeCount: employees.length,
+      }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.pathname.endsWith("/directory/employees")) {
+      const records = url.searchParams.get("permissionStatus") === "ENABLED" ? [] : employees;
+      return new Response(JSON.stringify({ records, total: records.length }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+}
+
 afterEach(() => {
   document.body.innerHTML = "";
   vi.restoreAllMocks();
@@ -432,13 +486,16 @@ describe("财务端发票抬头管理", () => {
     expect(permissionPage.text()).not.toContain("部门授权");
     expect(permissionPage.text()).not.toContain("员工授权");
     expect(permissionPage.text()).not.toContain("保存权限");
+    expect(permissionPage.text()).not.toContain("个人允许或关闭规则优先于所属部门");
+    expect(permissionPage.text()).not.toContain("部门与单独开启的员工共同组成当前可见范围");
+    expect(permissionPage.text()).not.toMatch(/\d+条个人规则/);
 
     await permissionPage.findAll("button").find((item) => item.text().includes("北京主体"))!.trigger("click");
     expect(permissionPage.text()).toContain("当前可见 46 人");
   });
 
-  it("部分可见编辑器统一筛选部门和员工并在右侧展示已开权限人员", async () => {
-    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+  it("部分可见编辑器采用单栏且不再展示右侧已开权限人员区域", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("/api/admin/directory/organizations")) {
         return new Response(JSON.stringify([
@@ -481,16 +538,15 @@ describe("财务端发票抬头管理", () => {
     expect(document.body.querySelector('[aria-label="部分可见企业筛选"]')).not.toBeNull();
     expect(document.body.querySelector('input[placeholder="搜索部门、姓名、工号或手机号"]')).not.toBeNull();
     expect(document.body.querySelector('[aria-label="部分可见结果类型"]')).not.toBeNull();
-    expect(document.body.querySelector('[aria-label="已开权限人员"]')).not.toBeNull();
-    expect(document.body.textContent).toContain("孙鑫尧");
-    expect(document.body.textContent).toContain("来自平台开发部");
-    expect(document.body.querySelector('input[placeholder="搜索已开权限人员"]')).not.toBeNull();
-    expect(request.mock.calls.some(([url]) => {
-      const parsed = new URL(String(url), "http://localhost");
-      return parsed.pathname.endsWith("/directory/employees")
-        && parsed.searchParams.get("subjectId") === "1"
-        && parsed.searchParams.get("permissionStatus") === "ENABLED";
-    })).toBe(true);
+    expect(document.body.textContent).not.toContain("个人设置优先于所属部门");
+    expect(document.body.textContent).not.toContain("从通讯录中选择部门或员工");
+    expect(document.body.querySelector('[aria-label="已开权限人员"]')).toBeNull();
+    expect(document.body.querySelector('input[placeholder="搜索已开权限人员"]')).toBeNull();
+    expect(document.body.querySelector('[aria-label="重置已开权限人员搜索"]')).toBeNull();
+    expect(Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .some((button) => button.textContent?.trim() === "重")).toBe(false);
+    expect(adminStyles).toMatch(/\.partial-permission-editor\s*\{[^}]*display:\s*block;/s);
+    expect(adminStyles).not.toMatch(/\.partial-permission-editor\s*\{[^}]*grid-template-columns:/s);
     wrapper.unmount();
   });
 
@@ -552,7 +608,7 @@ describe("财务端发票抬头管理", () => {
     document.body.querySelector<HTMLElement>('[aria-label="部门结果"]')?.click();
     await nextTick();
     await flushPromises();
-    expect(document.body.textContent).toContain("从通讯录中选择部门或员工");
+    expect(document.body.textContent).not.toContain("从通讯录中选择部门或员工");
     expect(document.body.textContent).not.toContain("请输入部门名称");
     wrapper.unmount();
   });
@@ -645,26 +701,137 @@ describe("财务端发票抬头管理", () => {
     expect(permissionPage.text()).toContain("当前可见 386 人");
   });
 
-  it("部门授权中的成员可继承部门权限并保存员工级关闭覆盖", async () => {
+  it("勾选部门时强制联动开启该部门全部员工", async () => {
+    mockPlatformPermissionDirectory();
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
+
+    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
+    await flushPromises();
+    const memberSwitches = ["孙鑫尧", "李晨"].map((employeeName) =>
+      document.body.querySelector<HTMLElement>(`[aria-label="${employeeName}的单独启用权限"]`));
+    expect(memberSwitches.every((item) => item?.closest(".el-switch")?.classList.contains("is-checked") === false)).toBe(true);
+
+    // 先把一名员工手动开关一次，最终部门选择仍应覆盖此前的个人编辑痕迹。
+    memberSwitches[0]?.click();
+    await nextTick();
+    memberSwitches[0]?.click();
+    await nextTick();
+    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
+      .find((row) => row.textContent?.includes("赛宝绿创能源技术（上海）有限公司")
+        && row.textContent?.includes("平台开发部"));
+    (departmentRow?.querySelector(".el-checkbox") as HTMLElement).click();
+    await nextTick();
+
+    expect(memberSwitches.every((item) => item?.closest(".el-switch")?.classList.contains("is-checked") === true)).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("取消部门时强制联动关闭该部门全部员工", async () => {
+    mockPlatformPermissionDirectory();
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    layoutVm(wrapper).permissionProfiles[0].departments = [{
+      id: 11,
+      corpCode: "sebo",
+      corpName: "赛宝绿创能源技术（上海）有限公司",
+      dingDepartmentId: "ding-dept-platform",
+      departmentName: "平台开发部",
+      employeeCount: 2,
+    }];
+    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
+
+    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
+    await flushPromises();
+    const memberSwitches = ["孙鑫尧", "李晨"].map((employeeName) =>
+      document.body.querySelector<HTMLElement>(`[aria-label="${employeeName}的单独启用权限"]`));
+    expect(memberSwitches.every((item) => item?.closest(".el-switch")?.classList.contains("is-checked") === true)).toBe(true);
+
+    // 保持一名员工为开启但留下个人编辑痕迹，取消部门仍必须统一关闭。
+    memberSwitches[0]?.click();
+    await nextTick();
+    memberSwitches[0]?.click();
+    await nextTick();
+    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
+      .find((row) => row.textContent?.includes("赛宝绿创能源技术（上海）有限公司")
+        && row.textContent?.includes("平台开发部"));
+    (departmentRow?.querySelector(".el-checkbox") as HTMLElement).click();
+    await nextTick();
+
+    expect(memberSwitches.every((item) => item?.closest(".el-switch")?.classList.contains("is-checked") === false)).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("重开编辑器并切换主体时重新水合已缓存的部门成员权限", async () => {
+    mockPlatformPermissionDirectory();
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    const department = {
+      id: 11,
+      corpCode: "sebo",
+      corpName: "赛宝绿创能源技术（上海）有限公司",
+      dingDepartmentId: "ding-dept-platform",
+      departmentName: "平台开发部",
+      employeeCount: 2,
+    };
+    layoutVm(wrapper).permissionProfiles[0].departments = [department];
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
+    layoutVm(wrapper).permissionProfiles[1].departments = [];
+    layoutVm(wrapper).permissionProfiles[1].employeeRules = [{
+      id: 101,
+      corpCode: "sebo",
+      corpName: "赛宝绿创能源技术（上海）有限公司",
+      dingUserId: "ding-employee-sun",
+      employeeNo: "R04952",
+      employeeName: "孙鑫尧",
+      departmentId: 11,
+      departmentIds: [11],
+      departmentName: "平台开发部",
+      mobile: "13936725713",
+      effect: "ALLOW",
+    }];
+
+    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
+    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
+    await flushPromises();
+    expect(document.body.querySelector('[aria-label="孙鑫尧的单独启用权限"]')
+      ?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
+
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.trim() === "取消")!.click();
+    await nextTick();
+    await wrapper.get('[aria-label="主体权限配置"]').findAll("button")
+      .find((button) => button.text().includes("北京主体"))!.trigger("click");
+    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
+    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
+    await flushPromises();
+
+    const rehydratedSwitch = document.body.querySelector('[aria-label="孙鑫尧的单独启用权限"]');
+    expect(rehydratedSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
+    expect(rehydratedSwitch?.closest(".el-switch")?.classList.contains("is-disabled")).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("撤销部门后分页加载到的旧员工允许规则显示关闭且不再提交", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes("/api/admin/directory/organizations")) {
-        return new Response(JSON.stringify([
-          { corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司" },
-        ]), { status: 200, headers: { "Content-Type": "application/json" } });
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname.endsWith("/directory/organizations")) {
+        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
       }
-      if (url.includes("/api/admin/directory/departments")) {
+      if (url.pathname.endsWith("/directory/departments")) {
         return new Response(JSON.stringify({ records: [{
           id: 11,
           corpCode: "sebo",
           corpName: "赛宝绿创能源技术（上海）有限公司",
           dingDepartmentId: "ding-dept-platform",
           departmentName: "平台开发部",
-          employeeCount: 1,
+          employeeCount: 11,
         }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
-      if (url.includes("/api/admin/directory/employees")) {
-        const employee = url.includes("pageNum=2") ? {
+      if (url.pathname.endsWith("/directory/employees")) {
+        const secondPage = url.searchParams.get("pageNum") === "2";
+        const employee = secondPage ? {
           id: 102,
           corpCode: "sebo",
           corpName: "赛宝绿创能源技术（上海）有限公司",
@@ -672,6 +839,7 @@ describe("财务端发票抬头管理", () => {
           employeeNo: "R01411",
           employeeName: "李晨",
           departmentId: 11,
+          departmentIds: [11],
           departmentName: "平台开发部",
           mobile: "18223148993",
         } : {
@@ -682,6 +850,7 @@ describe("财务端发票抬头管理", () => {
           employeeNo: "R04952",
           employeeName: "孙鑫尧",
           departmentId: 11,
+          departmentIds: [11],
           departmentName: "平台开发部",
           mobile: "13936725713",
         };
@@ -690,42 +859,191 @@ describe("财务端发票抬头管理", () => {
           headers: { "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
     });
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
+    layoutVm(wrapper).permissionProfiles[0].departments = [{
+      id: 11,
+      corpCode: "sebo",
+      corpName: "赛宝绿创能源技术（上海）有限公司",
+      dingDepartmentId: "ding-dept-platform",
+      departmentName: "平台开发部",
+      employeeCount: 11,
+    }];
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [{
+      id: 102,
+      corpCode: "sebo",
+      corpName: "赛宝绿创能源技术（上海）有限公司",
+      dingUserId: "ding-employee-li",
+      employeeNo: "R01411",
+      employeeName: "李晨",
+      departmentId: 11,
+      departmentIds: [11],
+      departmentName: "平台开发部",
+      mobile: "18223148993",
+      effect: "ALLOW",
+    }];
     await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
 
-    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
+    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
+      .find((row) => row.textContent?.includes("平台开发部"));
+    (departmentRow?.querySelector(".el-table__expand-icon") as HTMLElement).click();
     await flushPromises();
-    const memberSwitch = document.body.querySelector<HTMLElement>('[aria-label="孙鑫尧的单独启用权限"]');
-    expect(memberSwitch).not.toBeNull();
-    expect(memberSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
+    (departmentRow?.querySelector(".el-checkbox") as HTMLElement).click();
+    await nextTick();
+    (document.body.querySelector(".department-member-panel .el-pagination .btn-next") as HTMLElement).click();
+    await flushPromises();
+
+    expect(document.body.querySelector('[aria-label="李晨的单独启用权限"]')
+      ?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("确定选择"))!.click();
+    await flushPromises();
+    const saveRequest = request.mock.calls.find(([input, init]) =>
+      String(input).includes("/permission-profile") && init?.method === "PUT");
+    const savedBody = JSON.parse(String(saveRequest?.[1]?.body));
+    expect(savedBody.revokedDepartmentIds).toEqual([11]);
+    expect(savedBody.reenabledEmployeeIds).toEqual([]);
+    expect(savedBody.employeeRules).not.toContainEqual(expect.objectContaining({ employeeId: 102 }));
+    wrapper.unmount();
+  });
+
+  it("取消部门后可单独重开员工并向后端提交撤销与重开名单", async () => {
+    const request = mockPlatformPermissionDirectory();
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    layoutVm(wrapper).permissionProfiles[0].departments = [{
+      id: 11,
+      corpCode: "sebo",
+      corpName: "赛宝绿创能源技术（上海）有限公司",
+      dingDepartmentId: "ding-dept-platform",
+      departmentName: "平台开发部",
+      employeeCount: 2,
+    }];
+    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
 
     const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
       .find((row) => row.textContent?.includes("赛宝绿创能源技术（上海）有限公司")
         && row.textContent?.includes("平台开发部"));
     (departmentRow?.querySelector(".el-checkbox") as HTMLElement).click();
     await nextTick();
-    expect(memberSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
 
-    memberSwitch?.click();
+    document.body.querySelector<HTMLElement>('[aria-label="员工结果"]')?.click();
     await nextTick();
-    expect(memberSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
-    (document.body.querySelector(".department-member-panel .el-pagination .btn-next") as HTMLElement).click();
     await flushPromises();
-    (document.body.querySelector(".department-member-panel .el-pagination .btn-prev") as HTMLElement).click();
-    await flushPromises();
-    expect(document.body.querySelector('[aria-label="孙鑫尧的单独启用权限"]')
-      ?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
+    const employeeSwitch = document.body.querySelector<HTMLElement>('[aria-label="孙鑫尧的查看权限"]');
+    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
+    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-disabled")).toBe(false);
+    employeeSwitch?.click();
+    await nextTick();
+    expect(layoutVm(wrapper).reenabledEmployeeIds).toEqual([101]);
+    employeeSwitch?.click();
+    await nextTick();
+    expect(layoutVm(wrapper).reenabledEmployeeIds).toEqual([]);
+    employeeSwitch?.click();
+    await nextTick();
+
     Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
       .find((button) => button.textContent?.includes("确定选择"))!.click();
     await flushPromises();
 
+    const saveRequest = request.mock.calls.find(([input, init]) =>
+      String(input).includes("/permission-profile") && init?.method === "PUT");
+    const savedBody = JSON.parse(String(saveRequest?.[1]?.body));
+    expect(savedBody.departmentIds).not.toContain(11);
+    expect(savedBody.revokedDepartmentIds).toEqual([11]);
+    expect(savedBody.reenabledEmployeeIds).toEqual([101]);
+    expect(savedBody.employeeRules).toContainEqual({ employeeId: 101, effect: "ALLOW" });
+    wrapper.unmount();
+  });
+
+  it("取消员工所属的一个部门时仍保留其他已选部门继承的权限", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname.endsWith("/directory/organizations")) {
+        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.pathname.endsWith("/directory/departments")) {
+        return new Response(JSON.stringify({ records: [
+          { id: 11, dingDepartmentId: "dept-11", departmentName: "平台开发部", employeeCount: 1 },
+          { id: 12, dingDepartmentId: "dept-12", departmentName: "项目管理部", employeeCount: 1 },
+        ], total: 2 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.pathname.endsWith("/directory/employees")) {
+        return new Response(JSON.stringify({ records: [{
+          id: 201,
+          dingUserId: "ding-cross-department",
+          employeeNo: "R0201",
+          employeeName: "跨部门员工",
+          departmentId: 11,
+          departmentIds: [11, 12],
+          departmentName: "平台开发部",
+          mobile: "13800000201",
+        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    layoutVm(wrapper).permissionProfiles[0].departments = [
+      { id: 11, dingDepartmentId: "dept-11", departmentName: "平台开发部", employeeCount: 1 },
+      { id: 12, dingDepartmentId: "dept-12", departmentName: "项目管理部", employeeCount: 1 },
+    ];
+    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
+
+    const platformRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
+      .find((row) => row.textContent?.includes("平台开发部"));
+    (platformRow?.querySelector(".el-table__expand-icon") as HTMLElement).click();
+    await flushPromises();
+    const employeeSwitch = document.body.querySelector<HTMLElement>('[aria-label="跨部门员工的单独启用权限"]');
+    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
+
+    (platformRow?.querySelector(".el-checkbox") as HTMLElement).click();
+    await nextTick();
+    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
+    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-disabled")).toBe(true);
+
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("确定选择"))!.click();
+    await flushPromises();
+    const saveRequest = request.mock.calls.find(([input, init]) =>
+      String(input).includes("/permission-profile") && init?.method === "PUT");
+    const savedBody = JSON.parse(String(saveRequest?.[1]?.body));
+    expect(savedBody.departmentIds).toEqual([12]);
+    expect(savedBody.revokedDepartmentIds).toEqual([11]);
+    expect(savedBody.reenabledEmployeeIds).toEqual([]);
+    expect(savedBody.employeeRules).not.toContainEqual(expect.objectContaining({ employeeId: 201 }));
+    wrapper.unmount();
+  });
+
+  it("部分可见摘要统计采用两列布局", () => {
+    expect(adminStyles).toContain(".permission-summary-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));");
+  });
+
+  it("单独开启员工不会自动勾选其所属部门", async () => {
+    const request = mockPlatformPermissionDirectory();
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    await openPartialVisibilityEditor(wrapper, "USER");
+
+    document.body.querySelector<HTMLElement>('[aria-label="孙鑫尧的查看权限"]')?.click();
+    await nextTick();
+    document.body.querySelector<HTMLElement>('[aria-label="部门结果"]')?.click();
+    await nextTick();
+    await flushPromises();
+    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
+      .find((row) => row.textContent?.includes("赛宝绿创能源技术（上海）有限公司")
+        && row.textContent?.includes("平台开发部"));
+    expect(departmentRow?.querySelector(".el-checkbox")?.classList.contains("is-checked")).toBe(false);
+
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+      .find((button) => button.textContent?.includes("确定选择"))!.click();
+    await flushPromises();
     const saveRequest = request.mock.calls.find(([, init]) => init?.method === "PUT");
     const savedBody = JSON.parse(String(saveRequest?.[1]?.body));
-    expect(savedBody.departmentIds).toContain(11);
-    expect(savedBody.employeeRules).toContainEqual({ employeeId: 101, effect: "DENY" });
+    expect(savedBody.departmentIds).not.toContain(11);
+    expect(savedBody.employeeRules).toContainEqual({ employeeId: 101, effect: "ALLOW" });
     wrapper.unmount();
   });
 

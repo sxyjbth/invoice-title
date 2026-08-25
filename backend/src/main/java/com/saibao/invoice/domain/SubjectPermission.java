@@ -15,7 +15,7 @@ public class SubjectPermission {
     private String targetCorpCode;
     private String targetId;
     private String targetName;
-    /** ALLOW-允许查看，DENY-禁止查看；员工规则优先于部门规则。 */
+    /** ALLOW-允许查看；历史 DENY 规则保留兼容但不再参与权限判定。 */
     private String permissionEffect;
     private Boolean includeChildDepartments;
     private String status;

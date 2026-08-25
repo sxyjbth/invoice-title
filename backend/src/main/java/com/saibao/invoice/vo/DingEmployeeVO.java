@@ -3,6 +3,8 @@ package com.saibao.invoice.vo;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
+import java.util.List;
+
 /** 财务端可选择的钉钉员工。 */
 @Data
 @Schema(description = "钉钉员工目录信息")
@@ -14,6 +16,8 @@ public class DingEmployeeVO {
     @Schema(description = "员工工号") private String employeeNo;
     @Schema(description = "员工姓名") private String employeeName;
     @Schema(description = "所属部门目录主键 ID") private Long departmentId;
+    @Schema(description = "所属的全部有效部门目录主键 ID，用于多部门权限联动")
+    private List<Long> departmentIds;
     @Schema(description = "所属部门名称") private String departmentName;
     @Schema(description = "手机号") private String mobile;
     @Schema(description = "状态：ACTIVE-在职，INACTIVE-离职或停用") private String status;

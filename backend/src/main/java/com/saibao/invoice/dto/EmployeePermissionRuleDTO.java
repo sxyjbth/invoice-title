@@ -14,8 +14,8 @@ public class EmployeePermissionRuleDTO {
     private Long employeeId;
 
     @NotNull(message = "权限效果不能为空")
-    @Pattern(regexp = "ALLOW|DENY", message = "权限效果只能是 ALLOW 或 DENY")
-    @Schema(description = "权限效果：ALLOW-允许查看，DENY-禁止查看；员工规则优先于部门规则",
-            requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = {"ALLOW", "DENY"})
+    @Pattern(regexp = "ALLOW", message = "权限效果只能是 ALLOW")
+    @Schema(description = "权限效果：ALLOW-单独允许员工查看",
+            requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = {"ALLOW"})
     private String effect;
 }

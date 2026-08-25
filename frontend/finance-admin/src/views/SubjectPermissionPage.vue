@@ -5,7 +5,6 @@ import { financeLayoutKey } from "../layouts/finance-layout-context";
 
 const {
   activePermissionProfile,
-  employeeRuleId,
   openPermissionEditor,
   permissionProfiles,
   permissionSaving,
@@ -70,20 +69,15 @@ function selectVisibilityMode(allEmployeesVisible: boolean) {
         </div>
         <div v-else class="permission-mode-summary permission-mode-summary-partial">
           <div class="permission-mode-summary-heading">
-            <div><strong>已配置可见人员</strong><p>已选择 {{ activePermissionProfile.departments.length }} 个部门，个人允许或关闭规则优先于所属部门。</p></div>
+            <div><strong>已配置可见人员</strong></div>
             <el-button type="primary" plain @click="openPermissionEditor('DEPARTMENT')">编辑部分可见范围</el-button>
           </div>
           <div class="permission-summary-stats">
             <span><b>{{ activePermissionProfile.departments.length }}</b>个已选部门</span>
             <span><b>{{ activePermissionProfile.visibleCount }}</b>名当前可见人员</span>
-            <span><b>{{ activePermissionProfile.employeeRules.length }}</b>条个人规则</span>
           </div>
           <div v-if="activePermissionProfile.departments.length" class="permission-tags">
             <span v-for="department in activePermissionProfile.departments" :key="department.id">{{ department.departmentName }} · {{ department.employeeCount }} 人</span>
-          </div>
-          <div v-if="activePermissionProfile.employeeRules.length" class="employee-avatar-list">
-            <span v-for="employee in activePermissionProfile.employeeRules.slice(0, 6)" :key="employeeRuleId(employee)" :title="employee.effect === 'DENY' ? '单独关闭' : '单独开启'">{{ employee.employeeName.slice(0, 1) }}</span>
-            <span v-if="activePermissionProfile.employeeRules.length > 6">+{{ activePermissionProfile.employeeRules.length - 6 }}</span>
           </div>
         </div>
         <footer><p>权限调整后实时生效，员工调整后按钉钉通讯录自动更新。</p></footer>

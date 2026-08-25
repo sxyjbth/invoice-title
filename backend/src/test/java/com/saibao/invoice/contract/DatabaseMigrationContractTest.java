@@ -149,4 +149,17 @@ class DatabaseMigrationContractTest {
                 .doesNotContain("updated_at")
                 .doesNotContain("updated_by");
     }
+
+    @Test
+    void positivePermissionMigrationDocumentsUnionSemanticsAndLegacyDenyCompatibility() throws IOException {
+        Path migration = Path.of("src", "main", "resources", "db", "migration",
+                "V109__document_positive_permission_union.sql");
+
+        assertThat(migration).exists();
+        String sql = Files.readString(migration, StandardCharsets.UTF_8);
+        assertThat(sql)
+                .contains("MODIFY COLUMN permission_effect VARCHAR(20) NOT NULL DEFAULT 'ALLOW'")
+                .contains("正向允许查看")
+                .contains("历史DENY保留兼容但不再参与权限判定");
+    }
 }

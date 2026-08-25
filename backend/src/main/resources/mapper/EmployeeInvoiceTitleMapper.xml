@@ -1,18 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.saibao.invoice.mapper.EmployeeInvoiceTitleMapper">
-    <!-- 员工级规则优先级：个人拒绝 > 个人允许 > 全员可见/部门允许。所有规则均匹配企业业务编码。 -->
+    <!-- 正向授权并集：个人允许、全员可见或部门允许任一命中即可。所有规则均匹配企业业务编码。 -->
     <sql id="effectiveSubjectPermission">
         AND current_employee.status = 'ACTIVE'
-        AND NOT EXISTS (
-            SELECT 1 FROM subject_permission denied
-            WHERE denied.subject_id = s.id
-              AND denied.target_type = 'USER'
-              AND denied.target_corp_code = current_employee.corp_code
-              AND denied.target_id = current_employee.ding_user_id
-              AND denied.permission_effect = 'DENY'
-              AND denied.status = 'ENABLED' AND denied.deleted = 0
-        )
         AND (
             EXISTS (
                 SELECT 1 FROM subject_permission allowed_user
@@ -26,16 +17,16 @@
             OR s.all_employee_visible = 1
             OR EXISTS (
                 SELECT 1
-                FROM subject_permission allowed_department
-                INNER JOIN ding_employee_department employee_department
-                  ON employee_department.employee_id = current_employee.id
+                FROM ding_employee_department employee_department
                 INNER JOIN ding_department department_directory
                   ON department_directory.id = employee_department.department_id
                  AND department_directory.status = 'ENABLED'
-                WHERE allowed_department.subject_id = s.id
+                INNER JOIN subject_permission allowed_department
+                  ON allowed_department.target_corp_code = department_directory.corp_code
+                 AND allowed_department.target_id = department_directory.ding_department_id
+                WHERE employee_department.employee_id = current_employee.id
+                  AND allowed_department.subject_id = s.id
                   AND allowed_department.target_type = 'DEPARTMENT'
-                  AND allowed_department.target_corp_code = department_directory.corp_code
-                  AND allowed_department.target_id = department_directory.ding_department_id
                   AND allowed_department.permission_effect = 'ALLOW'
                   AND allowed_department.status = 'ENABLED'
                   AND allowed_department.deleted = 0

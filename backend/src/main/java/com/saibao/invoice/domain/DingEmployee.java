@@ -3,6 +3,7 @@ package com.saibao.invoice.domain;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /** 钉钉员工目录领域对象。 */
 @Data
@@ -18,6 +19,8 @@ public class DingEmployee {
     private String employeeNo;
     private String employeeName;
     private Long departmentId;
+    /** 员工所属的全部有效部门目录主键，包含主部门及兼职部门。 */
+    private List<Long> departmentIds;
     private String departmentName;
     private String mobile;
     private String status;

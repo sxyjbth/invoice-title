@@ -13,6 +13,10 @@ class SubjectPermissionMapperSqlContractTest {
 
     private static final Path MAPPER = Path.of(
             "src", "main", "resources", "mapper", "SubjectPermissionMapper.xml");
+    private static final Path DIRECTORY_MAPPER = Path.of(
+            "src", "main", "resources", "mapper", "DingDirectoryMapper.xml");
+    private static final Path EMPLOYEE_TITLE_MAPPER = Path.of(
+            "src", "main", "resources", "mapper", "EmployeeInvoiceTitleMapper.xml");
 
     @Test
     void effectiveEmployeeCountKeepsOuterEmployeeCorrelationOutOfJoinOnClause() throws IOException {
@@ -21,5 +25,18 @@ class SubjectPermissionMapperSqlContractTest {
         assertThat(mapperXml)
                 .doesNotContain("ON employee_department.employee_id = e.id")
                 .contains("WHERE employee_department.employee_id = e.id");
+    }
+
+    @Test
+    void multiDepartmentPermissionQueriesKeepOuterEmployeeCorrelationOutOfJoinOnClause() throws IOException {
+        String directoryMapperXml = Files.readString(DIRECTORY_MAPPER, StandardCharsets.UTF_8);
+        String employeeTitleMapperXml = Files.readString(EMPLOYEE_TITLE_MAPPER, StandardCharsets.UTF_8);
+
+        assertThat(directoryMapperXml)
+                .doesNotContain("ON employee_department.employee_id = e.id")
+                .contains("WHERE employee_department.employee_id = e.id");
+        assertThat(employeeTitleMapperXml)
+                .doesNotContain("ON employee_department.employee_id = current_employee.id")
+                .contains("WHERE employee_department.employee_id = current_employee.id");
     }
 }

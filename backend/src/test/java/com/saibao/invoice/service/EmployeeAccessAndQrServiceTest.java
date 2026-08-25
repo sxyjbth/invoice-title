@@ -145,7 +145,7 @@ class EmployeeAccessAndQrServiceTest {
     }
 
     @Test
-    void explicitEmployeeRuleShouldOverrideDepartmentRuleAndAllowIndividualExclusion() {
+    void departmentRuleShouldGrantAllMembersAndLegacyEmployeeDenyShouldNotOverrideIt() {
         jdbcTemplate.update("DELETE FROM subject_permission WHERE subject_id = 1");
         jdbcTemplate.update("""
                 INSERT INTO subject_permission
@@ -157,12 +157,10 @@ class EmployeeAccessAndQrServiceTest {
                 (1, 'USER', 'default', 'ding-employee-003', '采购员工', 'ALLOW', 'ENABLED', 'MANUAL', 'admin', 'admin', 0)
                 """);
 
-        assertThat(totalFor(1L)).as("部门已授权但员工明确拒绝").isZero();
-        assertThat(totalFor(4L)).as("同部门且无员工覆盖规则").isEqualTo(1);
-        assertThat(totalFor(3L)).as("部门未授权但员工明确允许").isEqualTo(1);
-        assertThatThrownBy(() -> qrTokenService.create(1L, 1L))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("没有该抬头的查看权限");
+        assertThat(totalFor(1L)).as("遗留员工拒绝规则不得覆盖已选择部门").isEqualTo(1);
+        assertThat(totalFor(4L)).as("同部门的所有员工都应可见").isEqualTo(1);
+        assertThat(totalFor(3L)).as("单独允许只授权该员工").isEqualTo(1);
+        assertThat(qrTokenService.create(1L, 1L).getToken()).isNotBlank();
     }
 
     @Test

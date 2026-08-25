@@ -331,29 +331,41 @@ class FinanceAdministrationCrudWebTest {
     }
 
     @Test
-    void permissionProfileUsesDirectorySelectionsAndReturnsEffectiveEmployeeOverrides() throws Exception {
+    void departmentSelectionGrantsAndRemovalRevokesEveryDepartmentMember() throws Exception {
         HttpResponse<String> saved = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
-                {"allEmployeeVisible":false,"departmentIds":[1],
-                 "employeeRules":[{"employeeId":1,"effect":"DENY"},{"employeeId":3,"effect":"ALLOW"}]}
+                {"allEmployeeVisible":false,"departmentIds":[1],"employeeRules":[]}
                 """);
         assertThat(saved.statusCode()).isEqualTo(200);
 
-        HttpResponse<String> profile = get(administrator, "/api/admin/subjects/1/permission-profile");
-        assertThat(profile.statusCode()).isEqualTo(200);
-        assertThat(profile.body())
-                .contains("技术中心", "ding-dept-tech", "示例员工", "\"effect\":\"DENY\"")
-                .contains("采购员工", "\"effect\":\"ALLOW\"", "\"visibleCount\":2");
-        assertThat(jdbcTemplate.queryForObject("""
-                SELECT COUNT(*) FROM subject_permission
-                WHERE subject_id = 1 AND target_id IN ('ding-dept-tech', 'ding-employee-001', 'ding-employee-003')
-                """, Long.class)).isEqualTo(3L);
+        HttpResponse<String> enabled = get(administrator,
+                "/api/admin/directory/employees?pageNum=1&pageSize=10&subjectId=1&permissionStatus=ENABLED");
+        assertThat(enabled.statusCode()).isEqualTo(200);
+        assertThat(enabled.body())
+                .contains("示例员工", "研发员工", "\"permissionEnabled\":true", "\"total\":2")
+                .doesNotContain("财务员工", "采购员工");
+
+        HttpResponse<String> removed = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[],"employeeRules":[]}
+                """);
+        assertThat(removed.statusCode()).isEqualTo(200);
+
+        HttpResponse<String> enabledAfterRemoval = get(administrator,
+                "/api/admin/directory/employees?pageNum=1&pageSize=10&subjectId=1&permissionStatus=ENABLED");
+        assertThat(enabledAfterRemoval.statusCode()).isEqualTo(200);
+        assertThat(enabledAfterRemoval.body()).contains("\"total\":0");
+
+        HttpResponse<String> disabledAfterRemoval = get(administrator,
+                "/api/admin/directory/employees?pageNum=1&pageSize=10&subjectId=1&permissionStatus=DISABLED");
+        assertThat(disabledAfterRemoval.statusCode()).isEqualTo(200);
+        assertThat(disabledAfterRemoval.body())
+                .contains("示例员工", "研发员工", "财务员工", "采购员工", "\"total\":4");
     }
 
     @Test
     void allEmployeeVisiblePatchTakesEffectImmediatelyWithoutReplacingExistingRules() throws Exception {
         HttpResponse<String> saved = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
                 {"allEmployeeVisible":false,"departmentIds":[1],
-                 "employeeRules":[{"employeeId":1,"effect":"DENY"},{"employeeId":3,"effect":"ALLOW"}]}
+                 "employeeRules":[{"employeeId":3,"effect":"ALLOW"}]}
                 """);
         assertThat(saved.statusCode()).isEqualTo(200);
         var rulesBefore = jdbcTemplate.queryForList("""
@@ -366,7 +378,7 @@ class FinanceAdministrationCrudWebTest {
                 "{\"allEmployeeVisible\":true}");
 
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.body()).contains("\"allEmployeeVisible\":true", "\"visibleCount\":3");
+        assertThat(response.body()).contains("\"allEmployeeVisible\":true", "\"visibleCount\":4");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT all_employee_visible FROM invoice_subject WHERE id = 1", Boolean.class)).isTrue();
         assertThat(jdbcTemplate.queryForList("""
@@ -376,26 +388,165 @@ class FinanceAdministrationCrudWebTest {
     }
 
     @Test
-    void employeeDirectoryFiltersByEffectiveSubjectPermissionAndReturnsSwitchState() throws Exception {
+    void individualEmployeeAllowOnlyAffectsThatEmployeeAndDoesNotCreateDepartmentRule() throws Exception {
         HttpResponse<String> saved = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
-                {"allEmployeeVisible":false,"departmentIds":[1],
-                 "employeeRules":[{"employeeId":1,"effect":"DENY"},{"employeeId":3,"effect":"ALLOW"}]}
+                {"allEmployeeVisible":false,"departmentIds":[],
+                 "employeeRules":[{"employeeId":3,"effect":"ALLOW"}]}
                 """);
         assertThat(saved.statusCode()).isEqualTo(200);
+
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM subject_permission
+                WHERE subject_id = 1 AND target_type = 'DEPARTMENT'
+                """, Long.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM subject_permission
+                WHERE subject_id = 1 AND target_type = 'USER'
+                  AND target_id = 'ding-employee-003' AND permission_effect = 'ALLOW'
+                """, Long.class)).isEqualTo(1L);
 
         HttpResponse<String> enabled = get(administrator,
                 "/api/admin/directory/employees?pageNum=1&pageSize=10&subjectId=1&permissionStatus=ENABLED");
         assertThat(enabled.statusCode()).isEqualTo(200);
         assertThat(enabled.body())
-                .contains("采购员工", "研发员工", "\"permissionEnabled\":true", "\"total\":2")
-                .doesNotContain("示例员工", "财务员工");
+                .contains("采购员工", "\"permissionEnabled\":true", "\"total\":1")
+                .doesNotContain("示例员工", "财务员工", "研发员工");
+    }
+
+    @Test
+    void removingDepartmentDropsStaleIndividualAllowsForItsMembers() throws Exception {
+        HttpResponse<String> initial = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[1],
+                 "employeeRules":[{"employeeId":1,"effect":"ALLOW"}],
+                 "revokedDepartmentIds":[1],"reenabledEmployeeIds":[]}
+                """);
+        assertThat(initial.statusCode()).isEqualTo(200);
+        assertThat(initial.body()).contains("\"visibleCount\":2", "示例员工");
+
+        HttpResponse<String> removed = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[],
+                 "employeeRules":[{"employeeId":1,"effect":"ALLOW"}],
+                 "revokedDepartmentIds":[1],"reenabledEmployeeIds":[]}
+                """);
+        assertThat(removed.statusCode()).isEqualTo(200);
+        assertThat(removed.body()).contains("\"visibleCount\":0", "\"employeeRules\":[]");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM subject_permission
+                WHERE subject_id = 1 AND target_type = 'USER'
+                """, Long.class)).isZero();
+
+        HttpResponse<String> enabled = get(administrator,
+                "/api/admin/directory/employees?pageNum=1&pageSize=10&subjectId=1&permissionStatus=ENABLED");
+        assertThat(enabled.statusCode()).isEqualTo(200);
+        assertThat(enabled.body()).contains("\"total\":0");
+    }
+
+    @Test
+    void removingDepartmentDerivesRevokedMembersWhenClientOmitsRevocationMetadata() throws Exception {
+        HttpResponse<String> initial = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[1],
+                 "employeeRules":[{"employeeId":1,"effect":"ALLOW"}]}
+                """);
+        assertThat(initial.statusCode()).isEqualTo(200);
+
+        HttpResponse<String> removed = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[],
+                 "employeeRules":[{"employeeId":1,"effect":"ALLOW"}]}
+                """);
+
+        assertThat(removed.statusCode()).isEqualTo(200);
+        assertThat(removed.body()).contains("\"visibleCount\":0", "\"employeeRules\":[]");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM subject_permission
+                WHERE subject_id = 1 AND target_type = 'USER'
+                """, Long.class)).isZero();
+    }
+
+    @Test
+    void removingDepartmentKeepsEmployeeExplicitlyReenabledInTheSameSave() throws Exception {
+        HttpResponse<String> initial = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[1],
+                 "employeeRules":[{"employeeId":1,"effect":"ALLOW"}]}
+                """);
+        assertThat(initial.statusCode()).isEqualTo(200);
+
+        HttpResponse<String> saved = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[],
+                 "employeeRules":[{"employeeId":1,"effect":"ALLOW"}],
+                 "revokedDepartmentIds":[1],"reenabledEmployeeIds":[1]}
+                """);
+
+        assertThat(saved.statusCode()).isEqualTo(200);
+        assertThat(saved.body())
+                .contains("\"visibleCount\":1", "示例员工", "\"effect\":\"ALLOW\"")
+                .contains("\"departments\":[]");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM subject_permission
+                WHERE subject_id = 1 AND target_type = 'USER'
+                  AND target_id = 'ding-employee-001' AND permission_effect = 'ALLOW'
+                """, Long.class)).isEqualTo(1L);
+
+        HttpResponse<String> enabled = get(administrator,
+                "/api/admin/directory/employees?pageNum=1&pageSize=10&subjectId=1&permissionStatus=ENABLED");
+        assertThat(enabled.statusCode()).isEqualTo(200);
+        assertThat(enabled.body())
+                .contains("示例员工", "\"permissionEnabled\":true", "\"total\":1")
+                .doesNotContain("研发员工", "财务员工", "采购员工");
+    }
+
+    @Test
+    void explicitlyReenabledEmployeeMustBeAnActiveRequestedAllowRule() throws Exception {
+        HttpResponse<String> missingAllowRule = send(administrator, "PUT",
+                "/api/admin/subjects/1/permission-profile", """
+                        {"allEmployeeVisible":false,"departmentIds":[],"employeeRules":[],
+                         "revokedDepartmentIds":[1],"reenabledEmployeeIds":[1]}
+                        """);
+        assertThat(missingAllowRule.statusCode()).isEqualTo(400);
+        assertThat(missingAllowRule.body()).contains("明确重新启用的员工必须同时存在于员工允许规则中");
+
+        HttpResponse<String> inactiveEmployee = send(administrator, "PUT",
+                "/api/admin/subjects/1/permission-profile", """
+                        {"allEmployeeVisible":false,"departmentIds":[],
+                         "employeeRules":[{"employeeId":999,"effect":"ALLOW"}],
+                         "revokedDepartmentIds":[1],"reenabledEmployeeIds":[999]}
+                        """);
+        assertThat(inactiveEmployee.statusCode()).isEqualTo(400);
+        assertThat(inactiveEmployee.body()).contains("所选员工不存在、已离职或尚未同步");
+    }
+
+    @Test
+    void legacyEmployeeDenyNoLongerOverridesSelectedDepartment() throws Exception {
+        HttpResponse<String> saved = send(administrator, "PUT", "/api/admin/subjects/1/permission-profile", """
+                {"allEmployeeVisible":false,"departmentIds":[1],"employeeRules":[]}
+                """);
+        assertThat(saved.statusCode()).isEqualTo(200);
+
+        jdbcTemplate.update("""
+                INSERT INTO subject_permission
+                (subject_id, target_type, target_corp_code, target_id, target_name, permission_effect,
+                 status, source, created_by, updated_by, deleted)
+                VALUES
+                (1, 'USER', 'default', 'ding-employee-001', '示例员工', 'DENY',
+                 'ENABLED', 'MANUAL', 'admin', 'admin', 0)
+                """);
+
+        HttpResponse<String> profile = get(administrator, "/api/admin/subjects/1/permission-profile");
+        assertThat(profile.statusCode()).isEqualTo(200);
+        assertThat(profile.body()).contains("\"visibleCount\":2");
+
+        HttpResponse<String> enabled = get(administrator,
+                "/api/admin/directory/employees?pageNum=1&pageSize=10&subjectId=1&permissionStatus=ENABLED");
+        assertThat(enabled.statusCode()).isEqualTo(200);
+        assertThat(enabled.body())
+                .contains("示例员工", "研发员工", "\"permissionEnabled\":true", "\"total\":2")
+                .doesNotContain("财务员工", "采购员工");
 
         HttpResponse<String> disabled = get(administrator,
                 "/api/admin/directory/employees?pageNum=1&pageSize=10&subjectId=1&permissionStatus=DISABLED");
         assertThat(disabled.statusCode()).isEqualTo(200);
         assertThat(disabled.body())
-                .contains("示例员工", "财务员工", "\"permissionEnabled\":false", "\"total\":2")
-                .doesNotContain("采购员工", "研发员工");
+                .contains("财务员工", "采购员工", "\"permissionEnabled\":false", "\"total\":2")
+                .doesNotContain("示例员工", "研发员工");
     }
 
     private HttpClient sessionClient() {

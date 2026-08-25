@@ -15,6 +15,6 @@ public class EmployeePermissionRuleVO {
     @Schema(description = "员工姓名") private String employeeName;
     @Schema(description = "部门名称") private String departmentName;
     @Schema(description = "手机号") private String mobile;
-    @Schema(description = "权限效果：ALLOW-允许查看，DENY-禁止查看；员工规则优先于部门规则")
+    @Schema(description = "权限效果：ALLOW-单独允许员工查看")
     private String effect;
 }

@@ -44,10 +44,29 @@
         DELETE FROM subject_permission WHERE subject_id = #{subjectId}
     </delete>
 
+    <select id="selectAllowedDepartmentIdsForUpdate" resultType="long">
+        SELECT d.id
+        FROM subject_permission p
+        INNER JOIN ding_department d
+          ON d.corp_code = p.target_corp_code
+         AND d.ding_department_id = p.target_id
+        WHERE p.subject_id = #{subjectId}
+          AND p.target_type = 'DEPARTMENT'
+          AND p.permission_effect = 'ALLOW'
+          AND p.status = 'ENABLED'
+          AND p.deleted = 0
+        ORDER BY d.id ASC
+        FOR UPDATE
+    </select>
+
+    <!-- 以员工-部门关系表统计；员工可能多部门任职，按员工主键去重。 -->
     <select id="selectProfileDepartments" resultType="com.saibao.invoice.vo.DingDepartmentVO">
         SELECT d.id, d.corp_code, d.corp_name, d.ding_department_id, d.department_name,
                d.parent_department_id, d.status,
-               (SELECT COUNT(*) FROM ding_employee e WHERE e.department_id = d.id AND e.status = 'ACTIVE') AS employee_count
+               (SELECT COUNT(DISTINCT e.id)
+                FROM ding_employee_department ed
+                INNER JOIN ding_employee e ON e.id = ed.employee_id AND e.status = 'ACTIVE'
+                WHERE ed.department_id = d.id) AS employee_count
         FROM subject_permission p
         INNER JOIN ding_department d
           ON d.corp_code = p.target_corp_code
@@ -67,7 +86,7 @@
          AND e.ding_user_id = p.target_id
          AND e.status = 'ACTIVE'
         WHERE p.subject_id = #{subjectId} AND p.target_type = 'USER'
-          AND p.status = 'ENABLED' AND p.deleted = 0
+          AND p.permission_effect = 'ALLOW' AND p.status = 'ENABLED' AND p.deleted = 0
         ORDER BY e.corp_code ASC, e.employee_no ASC, e.id ASC
     </select>
 
@@ -76,13 +95,6 @@
         FROM ding_employee e
         INNER JOIN invoice_subject s ON s.id = #{subjectId} AND s.deleted = 0 AND s.status = 'ENABLED'
         WHERE e.status = 'ACTIVE'
-          AND NOT EXISTS (
-              SELECT 1 FROM subject_permission deny_rule
-              WHERE deny_rule.subject_id = s.id AND deny_rule.target_type = 'USER'
-                AND deny_rule.target_corp_code = e.corp_code AND deny_rule.target_id = e.ding_user_id
-                AND deny_rule.permission_effect = 'DENY'
-                AND deny_rule.status = 'ENABLED' AND deny_rule.deleted = 0
-          )
           AND (
               EXISTS (
                   SELECT 1 FROM subject_permission allow_user

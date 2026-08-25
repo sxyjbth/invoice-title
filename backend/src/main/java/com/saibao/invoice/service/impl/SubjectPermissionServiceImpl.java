@@ -24,8 +24,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.function.Function;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /** 主体权限服务实现。 */
@@ -84,8 +83,14 @@ public class SubjectPermissionServiceImpl implements ISubjectPermissionService {
         List<Long> departmentIds = distinct(request.getDepartmentIds());
         List<Long> employeeIds = request.getEmployeeRules() == null
                 ? List.of()
-                : request.getEmployeeRules().stream().map(EmployeePermissionRuleDTO::getEmployeeId)
+                : request.getEmployeeRules().stream()
+                .filter(rule -> "ALLOW".equals(rule.getEffect()))
+                .map(EmployeePermissionRuleDTO::getEmployeeId)
                 .collect(Collectors.collectingAndThen(Collectors.toCollection(LinkedHashSet::new), ArrayList::new));
+        List<Long> reenabledEmployeeIds = distinct(request.getReenabledEmployeeIds());
+        if (!employeeIds.containsAll(reenabledEmployeeIds)) {
+            throw new IllegalArgumentException("明确重新启用的员工必须同时存在于员工允许规则中");
+        }
 
         List<DingDepartment> departments = departmentIds.isEmpty()
                 ? List.of() : directoryMapper.selectDepartmentsByIds(departmentIds);
@@ -97,25 +102,34 @@ public class SubjectPermissionServiceImpl implements ISubjectPermissionService {
         if (employees.size() != employeeIds.size()) {
             throw new IllegalArgumentException("所选员工不存在、已离职或尚未同步");
         }
-
-        Map<Long, EmployeePermissionRuleDTO> ruleByEmployeeId = request.getEmployeeRules() == null
-                ? Map.of()
-                : request.getEmployeeRules().stream().collect(Collectors.toMap(
-                        EmployeePermissionRuleDTO::getEmployeeId,
-                        Function.identity(),
-                        (first, replacement) -> replacement));
+        Set<Long> activeEmployeeIds = employees.stream()
+                .map(DingEmployee::getId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (!activeEmployeeIds.containsAll(reenabledEmployeeIds)) {
+            throw new IllegalArgumentException("明确重新启用的员工不存在、已离职或尚未同步");
+        }
 
         if (subjectMapper.updateAllEmployeeVisible(subjectId,
                 Boolean.TRUE.equals(request.getAllEmployeeVisible()), operatorUserId) == 0) {
             throw new IllegalArgumentException("展示主体不存在：" + subjectId);
         }
+        List<Long> revokedDepartmentIds = new ArrayList<>(mapper.selectAllowedDepartmentIdsForUpdate(subjectId));
+        revokedDepartmentIds.removeAll(departmentIds);
+        Set<Long> revokedDepartmentMemberIds = revokedDepartmentIds.isEmpty()
+                ? new LinkedHashSet<>()
+                : new LinkedHashSet<>(directoryMapper.selectActiveEmployeeIdsByDepartmentIds(revokedDepartmentIds));
+        revokedDepartmentMemberIds.removeAll(reenabledEmployeeIds);
+        List<DingEmployee> finalEmployees = employees.stream()
+                .filter(employee -> !revokedDepartmentMemberIds.contains(employee.getId()))
+                .toList();
+
         mapper.deleteBySubjectId(subjectId);
         departments.forEach(department -> mapper.insert(newPermission(
                 subjectId, "DEPARTMENT", department.getCorpCode(), department.getDingDepartmentId(), department.getDepartmentName(),
                 "ALLOW", true, operatorUserId)));
-        employees.forEach(employee -> mapper.insert(newPermission(
+        finalEmployees.forEach(employee -> mapper.insert(newPermission(
                 subjectId, "USER", employee.getCorpCode(), employee.getDingUserId(), employee.getEmployeeName(),
-                ruleByEmployeeId.get(employee.getId()).getEffect(), false, operatorUserId)));
+                "ALLOW", false, operatorUserId)));
         return getProfile(subjectId);
     }
 

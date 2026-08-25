@@ -15,6 +15,7 @@ public interface SubjectPermissionMapper {
     int insert(SubjectPermission permission);
     int updateStatus(@Param("id") Long id, @Param("status") String status, @Param("updatedBy") String updatedBy);
     int deleteBySubjectId(@Param("subjectId") Long subjectId);
+    List<Long> selectAllowedDepartmentIdsForUpdate(@Param("subjectId") Long subjectId);
     List<DingDepartmentVO> selectProfileDepartments(@Param("subjectId") Long subjectId);
     List<EmployeePermissionRuleVO> selectProfileEmployeeRules(@Param("subjectId") Long subjectId);
     long countEffectiveEmployees(@Param("subjectId") Long subjectId);
