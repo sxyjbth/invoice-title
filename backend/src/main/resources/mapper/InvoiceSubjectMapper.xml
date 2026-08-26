@@ -15,7 +15,24 @@
 
     <select id="selectPage" resultType="com.saibao.invoice.domain.InvoiceSubject">
         SELECT s.id, s.subject_code, s.subject_name, s.status, s.sort_no, s.updated_by, s.updated_at,
-               (SELECT COUNT(*) FROM subject_permission p WHERE p.subject_id = s.id AND p.deleted = 0 AND p.status = 'ENABLED') AS employee_count,
+               (SELECT COUNT(DISTINCT e.id)
+                FROM ding_employee e
+                WHERE e.status = 'ACTIVE'
+                  AND s.status = 'ENABLED'
+                  AND (
+                    s.all_employee_visible = 1
+                    OR EXISTS (
+                        SELECT 1
+                        FROM subject_permission p
+                        WHERE p.subject_id = s.id
+                          AND p.target_type = 'USER'
+                          AND p.target_corp_code = e.corp_code
+                          AND p.target_id = e.ding_user_id
+                          AND p.permission_effect = 'ALLOW'
+                          AND p.status = 'ENABLED'
+                          AND p.deleted = 0
+                    )
+                  )) AS employee_count,
                (SELECT t.id FROM invoice_title_subject its
                 INNER JOIN invoice_title t ON t.id = its.title_id AND t.deleted = 0
                 WHERE its.subject_id = s.id

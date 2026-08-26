@@ -23,19 +23,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/admin/subjects")
-@Tag(name = "财务端-主体查看权限", description = "从钉钉员工和部门目录选择授权对象，部门成员可单独关闭，最终按有效正向授权路径计算可见范围")
+@Tag(name = "财务端-主体查看权限", description = "企业和部门用于批量选择员工，部分可见模式最终只保存精确员工集合")
 public class SubjectPermissionProfileController {
     private final ISubjectPermissionService service;
 
     @GetMapping("/{subjectId}/permission-profile")
-    @Operation(summary = "查询主体权限配置", description = "返回全员开关、部门授权、单独员工授权、部门成员例外和实际可见人数")
+    @Operation(summary = "查询主体权限配置", description = "返回全员可见状态、部分可见模式的精确员工集合、企业分组及实际可见人数")
     public SubjectPermissionProfileVO getProfile(
             @Parameter(description = "主体主键 ID", required = true) @PathVariable Long subjectId) {
         return service.getProfile(subjectId);
     }
 
     @PutMapping("/{subjectId}/permission-profile")
-    @Operation(summary = "保存主体权限配置", description = "部门和员工均使用通讯录目录 ID；部门勾选批量开启成员，员工关闭会屏蔽其全部当前已选部门授权边")
+    @Operation(summary = "保存主体权限配置", description = "selectedEmployeeIds 是部分可见模式的最终员工集合；保存时会整体替换该主体原有的部分可见授权")
     public SubjectPermissionProfileVO saveProfile(
             @Parameter(description = "主体主键 ID", required = true) @PathVariable Long subjectId,
             @Valid @RequestBody SubjectPermissionProfileSaveDTO request,
@@ -46,7 +46,7 @@ public class SubjectPermissionProfileController {
     @PatchMapping("/{subjectId}/permission-profile/all-employee-visible")
     @Operation(
             summary = "即时更新全员可见开关",
-            description = "仅更新全员可见状态并返回最新权限配置，不修改部门授权、员工允许规则或部门成员例外")
+            description = "全员可见与部分可见互斥；切换后立即生效，并清空该主体原有的部分可见员工授权")
     public SubjectPermissionProfileVO updateAllEmployeeVisible(
             @Parameter(description = "主体主键 ID", required = true) @PathVariable Long subjectId,
             @Valid @RequestBody AllEmployeeVisibleUpdateDTO request,

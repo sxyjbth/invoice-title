@@ -45,7 +45,6 @@ async function clickMenu(wrapper: ReturnType<typeof mount>, label: string) {
 
 async function openPartialVisibilityEditor(
   wrapper: ReturnType<typeof mount>,
-  resultType: "DEPARTMENT" | "USER",
 ) {
   const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
   const editButton = permissionPage.findAll("button")
@@ -54,21 +53,79 @@ async function openPartialVisibilityEditor(
   await editButton.trigger("click");
   await flushPromises();
 
-  const resultTypeLabel = resultType === "DEPARTMENT" ? "部门结果" : "员工结果";
-  const resultTypeButton = document.body.querySelector<HTMLElement>(`[aria-label="${resultTypeLabel}"]`);
-  if (!resultTypeButton) throw new Error(`未找到${resultTypeLabel}切换入口`);
-  resultTypeButton.click();
-  await nextTick();
-  await flushPromises();
-  return permissionPage;
+  const dialog = document.body.querySelector<HTMLElement>('[aria-label="编辑可见范围"]');
+  if (!dialog) throw new Error("未找到编辑可见范围弹窗");
+  return dialog;
 }
 
-function mockPlatformPermissionDirectory() {
-  const employees = [
+async function expandPermissionOrganization(dialog: HTMLElement, corpCode: string) {
+  const organization = dialog.querySelector<HTMLElement>(`[data-corp-code="${corpCode}"]`);
+  if (!organization) throw new Error(`未找到企业节点：${corpCode}`);
+  organization.click();
+  await flushPromises();
+}
+
+async function expandPermissionDepartment(dialog: HTMLElement, departmentId: number) {
+  const department = dialog.querySelector<HTMLElement>(`[data-department-id="${departmentId}"]`);
+  if (!department) throw new Error(`未找到部门节点：${departmentId}`);
+  department.click();
+  await flushPromises();
+}
+
+function permissionEmployeeRow(dialog: HTMLElement, employeeName: string) {
+  const row = Array.from(dialog.querySelectorAll<HTMLElement>(".permission-employee-row"))
+    .find((item) => item.textContent?.includes(employeeName));
+  if (!row) throw new Error(`未找到员工节点：${employeeName}`);
+  return row;
+}
+
+function permissionDepartmentCheckbox(dialog: HTMLElement, departmentName: string) {
+  const checkbox = dialog.querySelector<HTMLElement>(`[aria-label="选择部门 ${departmentName}"]`);
+  if (!checkbox) throw new Error(`未找到部门复选框：${departmentName}`);
+  return checkbox.classList.contains("el-checkbox") ? checkbox : checkbox.closest<HTMLElement>(".el-checkbox") ?? checkbox;
+}
+
+async function searchPermissionDirectory(dialog: HTMLElement, keyword: string) {
+  const input = dialog.querySelector<HTMLInputElement>('[aria-label="搜索部门或员工"]');
+  if (!input) throw new Error("未找到权限通讯录搜索框");
+  input.value = keyword;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", bubbles: true }));
+  await flushPromises();
+}
+
+async function selectPermissionSearchTab(dialog: HTMLElement, label: "全部" | "联系人" | "部门") {
+  const tab = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+    .find((item) => item.textContent?.trim() === label);
+  if (!tab) throw new Error(`未找到搜索结果标签：${label}`);
+  tab.click();
+  await flushPromises();
+}
+
+const seboOrganization = {
+  corpCode: "sebo",
+  corpName: "赛宝绿创能源技术（上海）有限公司",
+};
+
+const waldenOrganization = {
+  corpCode: "walden",
+  corpName: "瓦尔登环境科学研究院（北京）有限公司",
+};
+
+const platformDepartment = {
+  id: 11,
+  corpCode: "sebo",
+  corpName: seboOrganization.corpName,
+  dingDepartmentId: "ding-dept-platform",
+  departmentName: "平台开发部",
+  employeeCount: 2,
+};
+
+const platformEmployees = [
     {
       id: 101,
       corpCode: "sebo",
-      corpName: "赛宝绿创能源技术（上海）有限公司",
+      corpName: seboOrganization.corpName,
       dingUserId: "ding-employee-sun",
       employeeNo: "R04952",
       employeeName: "孙鑫尧",
@@ -79,7 +136,7 @@ function mockPlatformPermissionDirectory() {
     {
       id: 102,
       corpCode: "sebo",
-      corpName: "赛宝绿创能源技术（上海）有限公司",
+      corpName: seboOrganization.corpName,
       dingUserId: "ding-employee-li",
       employeeNo: "R01411",
       employeeName: "李晨",
@@ -87,27 +144,40 @@ function mockPlatformPermissionDirectory() {
       departmentName: "平台开发部",
       mobile: "18223148993",
     },
-  ];
+];
+
+function mockPermissionDirectory(options: {
+  organizations?: any[];
+  departments?: any[];
+  employees?: any[];
+} = {}) {
+  const organizations = options.organizations ?? [seboOrganization];
+  const departments = options.departments ?? [platformDepartment];
+  const employees = options.employees ?? platformEmployees;
 
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = new URL(String(input), "http://localhost");
     if (url.pathname.endsWith("/directory/organizations")) {
-      return new Response(JSON.stringify([
-        { corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司" },
-      ]), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify(organizations), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.pathname.endsWith("/directory/departments")) {
-      return new Response(JSON.stringify({ records: [{
-        id: 11,
-        corpCode: "sebo",
-        corpName: "赛宝绿创能源技术（上海）有限公司",
-        dingDepartmentId: "ding-dept-platform",
-        departmentName: "平台开发部",
-        employeeCount: employees.length,
-      }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      const corpCode = url.searchParams.get("corpCode") ?? "";
+      const keyword = url.searchParams.get("keyword") ?? "";
+      const records = departments.filter((department) =>
+        (!corpCode || department.corpCode === corpCode)
+        && (!keyword || [department.departmentName, department.corpName, department.corpCode]
+          .some((value) => String(value ?? "").includes(keyword))));
+      return new Response(JSON.stringify({ records, total: records.length }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.pathname.endsWith("/directory/employees")) {
-      const records = url.searchParams.get("permissionStatus") === "ENABLED" ? [] : employees;
+      const corpCode = url.searchParams.get("corpCode") ?? "";
+      const departmentId = Number(url.searchParams.get("departmentId"));
+      const keyword = url.searchParams.get("keyword") ?? "";
+      const records = employees.filter((employee) =>
+        (!corpCode || employee.corpCode === corpCode)
+        && (!departmentId || employee.departmentId === departmentId || employee.departmentIds?.includes(departmentId))
+        && (!keyword || [employee.employeeName, employee.employeeNo, employee.departmentName, employee.mobile, employee.corpName, employee.corpCode]
+          .some((value) => String(value ?? "").includes(keyword))));
       return new Response(JSON.stringify({ records, total: records.length }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -115,6 +185,10 @@ function mockPlatformPermissionDirectory() {
     }
     return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
   });
+}
+
+function mockPlatformPermissionDirectory() {
+  return mockPermissionDirectory();
 }
 
 afterEach(() => {
@@ -470,83 +544,136 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
-  it("主体权限只提供全员可见和部分可见两个互斥模式", async () => {
+  it("主体权限只提供两种互斥模式并按企业展示已选人员", async () => {
     const wrapper = await mountAdmin();
     await clickMenu(wrapper, "主体权限");
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [
+      { id: 101, corpCode: "sebo", employeeName: "孙鑫尧", effect: "ALLOW" },
+      { id: 201, corpCode: "walden", employeeName: "王月", effect: "ALLOW" },
+      { id: 999, corpCode: "sebo", employeeName: "不应展示", effect: "DENY" },
+    ];
+    await nextTick();
 
     const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
     expect(permissionPage.text()).toContain("选择主体");
-    expect(permissionPage.text()).toContain("当前可见 128 人");
+    expect(permissionPage.text()).toContain("当前可见 2 人");
     const visibilityModes = permissionPage.get('[aria-label="主体可见范围"]');
     expect(visibilityModes.get('[aria-label="全员可见"]').attributes("aria-checked")).toBe("false");
     expect(visibilityModes.get('[aria-label="部分可见"]').attributes("aria-checked")).toBe("true");
-    expect(permissionPage.text()).toContain("已配置可见人员");
-    expect(permissionPage.text()).toContain("编辑部分可见范围");
-    expect(permissionPage.text()).toContain("技术中心 · 86 人");
+    expect(permissionPage.get('[aria-label="赛宝已选人员"]').text()).toContain("孙鑫尧");
+    expect(permissionPage.get('[aria-label="瓦尔登已选人员"]').text()).toContain("王月");
+    expect(permissionPage.text()).not.toContain("不应展示");
     expect(permissionPage.text()).not.toContain("部门授权");
     expect(permissionPage.text()).not.toContain("员工授权");
     expect(permissionPage.text()).not.toContain("保存权限");
-    expect(permissionPage.text()).not.toContain("个人允许或关闭规则优先于所属部门");
-    expect(permissionPage.text()).not.toContain("部门与单独开启的员工共同组成当前可见范围");
-    expect(permissionPage.text()).not.toMatch(/\d+条个人规则/);
 
     await permissionPage.findAll("button").find((item) => item.text().includes("北京主体"))!.trigger("click");
-    expect(permissionPage.text()).toContain("当前可见 46 人");
+    expect(permissionPage.text()).toContain("当前可见 0 人");
   });
 
-  it("部分可见编辑器采用单栏且不再展示右侧已开权限人员区域", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes("/api/admin/directory/organizations")) {
-        return new Response(JSON.stringify([
-          { corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司" },
-        ]), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/departments")) {
-        return new Response(JSON.stringify({ records: [{
-          id: 11,
-          corpCode: "sebo",
-          corpName: "赛宝绿创能源技术（上海）有限公司",
-          dingDepartmentId: "ding-dept-platform",
-          departmentName: "平台开发部",
-          employeeCount: 6,
-        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/employees")) {
-        return new Response(JSON.stringify({ records: [{
-          id: 99,
-          corpCode: "sebo",
-          corpName: "赛宝绿创能源技术（上海）有限公司",
-          dingUserId: "ding-sun-xinyao",
-          employeeNo: "R04952",
-          employeeName: "孙鑫尧",
-          departmentId: 11,
-          departmentName: "平台开发部",
-          mobile: "13936725713",
-          permissionEnabled: true,
-        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
+  it("部分可见编辑器采用企业到部门到员工的左侧树和右侧已选人员两栏", async () => {
+    const waldenDepartment = {
+      id: 21,
+      corpCode: "walden",
+      corpName: waldenOrganization.corpName,
+      dingDepartmentId: "ding-dept-research",
+      departmentName: "数智化中心",
+      employeeCount: 1,
+    };
+    const request = mockPermissionDirectory({
+      organizations: [seboOrganization, waldenOrganization],
+      departments: [platformDepartment, waldenDepartment],
+      employees: [...platformEmployees, {
+        id: 201,
+        corpCode: "walden",
+        corpName: waldenOrganization.corpName,
+        dingUserId: "ding-employee-wang",
+        employeeNo: "W0001",
+        employeeName: "王月",
+        departmentId: 21,
+        departmentName: "数智化中心",
+        mobile: "13800000001",
+      }],
     });
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    await wrapper.get('[aria-label="主体权限配置"]').findAll("button")
-      .find((item) => item.text().includes("编辑部分可见范围"))!.trigger("click");
-    await flushPromises();
+    const dialog = await openPartialVisibilityEditor(wrapper);
 
-    expect(document.body.textContent).toContain("编辑部分可见范围");
-    expect(document.body.querySelector('[aria-label="部分可见企业筛选"]')).not.toBeNull();
-    expect(document.body.querySelector('input[placeholder="搜索部门、姓名、工号或手机号"]')).not.toBeNull();
-    expect(document.body.querySelector('[aria-label="部分可见结果类型"]')).not.toBeNull();
-    expect(document.body.textContent).not.toContain("个人设置优先于所属部门");
-    expect(document.body.textContent).not.toContain("从通讯录中选择部门或员工");
-    expect(document.body.querySelector('[aria-label="已开权限人员"]')).toBeNull();
-    expect(document.body.querySelector('input[placeholder="搜索已开权限人员"]')).toBeNull();
-    expect(document.body.querySelector('[aria-label="重置已开权限人员搜索"]')).toBeNull();
-    expect(Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
-      .some((button) => button.textContent?.trim() === "重")).toBe(false);
-    expect(adminStyles).toMatch(/\.partial-permission-editor\s*\{[^}]*display:\s*block;/s);
-    expect(adminStyles).not.toMatch(/\.partial-permission-editor\s*\{[^}]*grid-template-columns:/s);
+    expect(dialog.querySelector('[aria-label="企业部门员工选择树"]')).not.toBeNull();
+    expect(dialog.querySelector('[aria-label="已选择人员"]')).not.toBeNull();
+    expect(dialog.textContent).toContain(seboOrganization.corpName);
+    expect(dialog.textContent).toContain(waldenOrganization.corpName);
+
+    await expandPermissionOrganization(dialog, "sebo");
+    expect(dialog.textContent).toContain("平台开发部");
+    await expandPermissionDepartment(dialog, 11);
+    expect(permissionEmployeeRow(dialog, "孙鑫尧").textContent).toContain("R04952");
+    expect(permissionEmployeeRow(dialog, "孙鑫尧").textContent).toContain("13936725713");
+    expect(permissionEmployeeRow(dialog, "李晨")).toBeTruthy();
+    expect(request.mock.calls.some(([input]) => {
+      const url = new URL(String(input), "http://localhost");
+      return url.pathname.endsWith("/directory/departments") && url.searchParams.get("corpCode") === "sebo";
+    })).toBe(true);
+    expect(request.mock.calls.some(([input]) => {
+      const url = new URL(String(input), "http://localhost");
+      return url.pathname.endsWith("/directory/employees") && url.searchParams.get("departmentId") === "11";
+    })).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("通讯录搜索覆盖企业、部门和员工并可按联系人或部门筛选结果", async () => {
+    const waldenDepartment = {
+      id: 21,
+      corpCode: "walden",
+      corpName: waldenOrganization.corpName,
+      dingDepartmentId: "ding-dept-research",
+      departmentName: "数智化中心",
+      employeeCount: 1,
+    };
+    mockPermissionDirectory({
+      organizations: [seboOrganization, waldenOrganization],
+      departments: [platformDepartment, waldenDepartment],
+      employees: [...platformEmployees, {
+        id: 201,
+        corpCode: "walden",
+        corpName: waldenOrganization.corpName,
+        dingUserId: "ding-employee-wang",
+        employeeNo: "W0001",
+        employeeName: "王月",
+        departmentId: 21,
+        departmentName: "数智化中心",
+        mobile: "13800000001",
+      }],
+    });
+    const wrapper = await mountAdmin(true);
+    await clickMenu(wrapper, "主体权限");
+    layoutVm(wrapper).permissionProfiles[0].departments = [];
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
+    const dialog = await openPartialVisibilityEditor(wrapper);
+
+    expect(dialog.querySelector('input[placeholder="搜索姓名、工号、部门或手机号"]')).not.toBeNull();
+    await searchPermissionDirectory(dialog, "赛宝绿创");
+    const resultTabs = dialog.querySelector('[role="tablist"][aria-label="搜索结果类型"]');
+    expect(resultTabs?.textContent).toContain("全部");
+    expect(resultTabs?.textContent).toContain("联系人");
+    expect(resultTabs?.textContent).toContain("部门");
+    expect(dialog.querySelector('[aria-label="联系人 孙鑫尧"]')).not.toBeNull();
+    expect(dialog.querySelector('[aria-label="部门 平台开发部"]')).not.toBeNull();
+
+    await searchPermissionDirectory(dialog, "平台");
+    await selectPermissionSearchTab(dialog, "部门");
+    const departmentResult = dialog.querySelector<HTMLElement>('[aria-label="部门 平台开发部"]');
+    expect(departmentResult?.textContent).toContain(seboOrganization.corpName);
+    expect(dialog.querySelector('[aria-label="联系人 孙鑫尧"]')).toBeNull();
+
+    await searchPermissionDirectory(dialog, "孙鑫尧");
+    await selectPermissionSearchTab(dialog, "联系人");
+    const employeeResult = dialog.querySelector<HTMLElement>('[aria-label="联系人 孙鑫尧"]');
+    expect(employeeResult?.textContent).toContain("R04952");
+    expect(employeeResult?.textContent).toContain("13936725713");
+    employeeResult?.click();
+    await nextTick();
+    expect(dialog.querySelector('[aria-label="已选择人员"]')?.textContent).toContain("孙鑫尧");
     wrapper.unmount();
   });
 
@@ -560,20 +687,22 @@ describe("财务端发票抬头管理", () => {
   });
 
   it("点击确定选择只保存权限并保持弹窗，点击取消后才关闭", async () => {
-    mockPlatformPermissionDirectory();
+    const request = mockPlatformPermissionDirectory();
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
+    const dialog = await openPartialVisibilityEditor(wrapper);
 
-    const confirmButton = Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+    const confirmButton = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("确定选择"));
     expect(confirmButton).toBeTruthy();
     confirmButton?.click();
     await flushPromises();
 
     expect(layoutVm(wrapper).permissionDialogVisible).toBe(true);
+    expect(dialog.querySelector('[aria-label="企业部门员工选择树"]')).not.toBeNull();
+    expect(request.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(true);
 
-    const cancelButton = Array.from(document.body.querySelectorAll<HTMLButtonElement>(".partial-permission-dialog button"))
+    const cancelButton = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.trim() === "取消");
     expect(cancelButton).toBeTruthy();
     cancelButton?.click();
@@ -599,113 +728,6 @@ describe("财务端发票抬头管理", () => {
     const permissionPage = wrapper.get('[aria-label="主体权限配置"]');
     expect(permissionPage.text()).toContain("暂无主体可配置权限");
     expect(permissionPage.text()).toContain("前往主体管理");
-  });
-
-  it("员工权限以启用开关呈现部门授权结果并支持按最终状态筛选", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes("/api/admin/directory/organizations")) {
-        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/departments")) {
-        return new Response(JSON.stringify({ records: [], total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/employees")) {
-        return new Response(JSON.stringify({ records: [{
-          id: 1,
-          dingUserId: "ding-employee-001",
-          employeeNo: "SB0001",
-          employeeName: "陈一",
-          departmentId: 1,
-          departmentName: "技术中心",
-          mobile: "13800000001",
-          permissionEnabled: true,
-        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
-    });
-    const wrapper = await mountAdmin(true);
-    await clickMenu(wrapper, "主体权限");
-
-    const permissionPage = await openPartialVisibilityEditor(wrapper, "USER");
-    expect(document.body.querySelector('input[placeholder="搜索部门、姓名、工号或手机号"]')).not.toBeNull();
-    expect(Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button")).some((button) => button.textContent?.includes("搜索"))).toBe(true);
-    expect(Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button")).some((button) => button.textContent?.includes("重置"))).toBe(true);
-    expect(document.body.textContent).toContain("员工权限");
-    expect(document.body.textContent).toContain("已启用");
-    expect(document.body.textContent).toContain("已关闭");
-    expect(document.body.textContent).not.toContain("继承部门");
-    expect(document.body.querySelector('[aria-label="陈一的查看权限"]')?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
-    expect(document.body.textContent).not.toContain("钉钉对象 ID");
-
-    document.body.querySelector<HTMLElement>('[aria-label="部门结果"]')?.click();
-    await nextTick();
-    await flushPromises();
-    expect(document.body.textContent).not.toContain("从通讯录中选择部门或员工");
-    expect(document.body.textContent).not.toContain("请输入部门名称");
-    wrapper.unmount();
-  });
-
-  it("员工与部门授权搜索框保持紧凑并完整显示搜索提示", () => {
-    expect(adminStyles).toContain(".directory-search-actions .el-input { width: 320px;");
-    expect(adminStyles).toContain(".directory-search-actions { display: flex;");
-  });
-
-  it("部门授权支持企业筛选并按部门懒加载分页展示在职成员", async () => {
-    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes("/api/admin/directory/organizations")) {
-        return new Response(JSON.stringify([
-          { corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司" },
-          { corpCode: "walden", corpName: "瓦尔登环境科学研究院（北京）有限公司" },
-        ]), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/departments")) {
-        return new Response(JSON.stringify({ records: [{
-          id: 11,
-          corpCode: "sebo",
-          corpName: "赛宝绿创能源技术（上海）有限公司",
-          dingDepartmentId: "ding-dept-platform",
-          departmentName: "平台开发部",
-          employeeCount: 1,
-        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/employees")) {
-        return new Response(JSON.stringify({ records: [{
-          id: 101,
-          corpCode: "sebo",
-          corpName: "赛宝绿创能源技术（上海）有限公司",
-          dingUserId: "ding-employee-sun",
-          employeeNo: "R04952",
-          employeeName: "孙鑫尧",
-          departmentId: 11,
-          departmentName: "平台开发部",
-          mobile: "13936725713",
-        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
-    });
-    const wrapper = await mountAdmin(true);
-    await clickMenu(wrapper, "主体权限");
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
-
-    expect(document.body.querySelector('[aria-label="部分可见企业筛选"]')).not.toBeNull();
-    expect(document.body.textContent).toContain("全部企业");
-    expect(document.body.querySelector(".el-table__expand-icon")).not.toBeNull();
-
-    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
-    await flushPromises();
-    expect(document.body.textContent).toContain("孙鑫尧");
-    expect(document.body.textContent).toContain("R04952");
-    expect(document.body.textContent).toContain("13936725713");
-    expect(document.body.querySelector('[aria-label="平台开发部成员分页"]')).not.toBeNull();
-    expect(request.mock.calls.some(([url]) => {
-      const parsed = new URL(String(url), "http://localhost");
-      return parsed.pathname.endsWith("/directory/employees")
-        && parsed.searchParams.get("corpCode") === "sebo"
-        && parsed.searchParams.get("departmentId") === "11";
-    })).toBe(true);
-    wrapper.unmount();
   });
 
   it("全员可见开关点击后立即单独保存并采用后端返回的真实人数", async () => {
@@ -738,60 +760,50 @@ describe("财务端发票抬头管理", () => {
     mockPlatformPermissionDirectory();
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
+    layoutVm(wrapper).permissionProfiles[0].departments = [];
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
+    const dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    const memberRows = ["孙鑫尧", "李晨"].map((name) => permissionEmployeeRow(dialog, name));
+    expect(memberRows.every((row) => !row.classList.contains("selected"))).toBe(true);
 
-    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
+    // 先对单人留下编辑痕迹，最终选择部门仍必须覆盖此前的个人状态。
+    memberRows[0].click();
+    await nextTick();
+    memberRows[0].click();
+    await nextTick();
+    permissionDepartmentCheckbox(dialog, "平台开发部").click();
     await flushPromises();
-    const memberSwitches = ["孙鑫尧", "李晨"].map((employeeName) =>
-      document.body.querySelector<HTMLElement>(`[aria-label="${employeeName}的单独启用权限"]`));
-    expect(memberSwitches.every((item) => item?.closest(".el-switch")?.classList.contains("is-checked") === false)).toBe(true);
 
-    // 先把一名员工手动开关一次，最终部门选择仍应覆盖此前的个人编辑痕迹。
-    memberSwitches[0]?.click();
-    await nextTick();
-    memberSwitches[0]?.click();
-    await nextTick();
-    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
-      .find((row) => row.textContent?.includes("赛宝绿创能源技术（上海）有限公司")
-        && row.textContent?.includes("平台开发部"));
-    (departmentRow?.querySelector(".el-checkbox") as HTMLElement).click();
-    await nextTick();
-
-    expect(memberSwitches.every((item) => item?.closest(".el-switch")?.classList.contains("is-checked") === true)).toBe(true);
+    expect(memberRows.every((row) => row.classList.contains("selected"))).toBe(true);
+    expect(permissionDepartmentCheckbox(dialog, "平台开发部").classList.contains("is-checked")).toBe(true);
+    expect(dialog.querySelector('[aria-label="已选择人员"]')?.textContent).toContain("孙鑫尧");
+    expect(dialog.querySelector('[aria-label="已选择人员"]')?.textContent).toContain("李晨");
     wrapper.unmount();
   });
 
-  it("部门成员关闭后取消部门勾选显示并提交部门排除名单", async () => {
+  it("从右侧移除部门成员后显示部分选中并保存排除名单，重开仍正确回显", async () => {
     const request = mockPlatformPermissionDirectory();
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    layoutVm(wrapper).permissionProfiles[0].departments = [{
-      id: 11,
-      corpCode: "sebo",
-      corpName: "赛宝绿创能源技术（上海）有限公司",
-      dingDepartmentId: "ding-dept-platform",
-      departmentName: "平台开发部",
-      employeeCount: 2,
-    }];
+    layoutVm(wrapper).permissionProfiles[0].departments = [platformDepartment];
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
     layoutVm(wrapper).permissionProfiles[0].departmentExcludedEmployeeIds = [];
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
+    let dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    expect(permissionEmployeeRow(dialog, "孙鑫尧").classList.contains("selected")).toBe(true);
 
-    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
-    await flushPromises();
-    const employeeSwitch = document.body.querySelector<HTMLElement>('[aria-label="孙鑫尧的单独启用权限"]');
-    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
-    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-disabled")).toBe(false);
-
-    employeeSwitch?.click();
+    dialog.querySelector<HTMLElement>('[aria-label="移除 孙鑫尧"]')?.click();
     await nextTick();
-    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
-    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
-      .find((row) => row.textContent?.includes("平台开发部"));
-    expect(departmentRow?.querySelector(".el-checkbox")?.classList.contains("is-checked")).toBe(false);
-    expect(document.body.querySelector('[aria-label="李晨的单独启用权限"]')
-      ?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
+    expect(permissionEmployeeRow(dialog, "孙鑫尧").classList.contains("selected")).toBe(false);
+    expect(permissionEmployeeRow(dialog, "李晨").classList.contains("selected")).toBe(true);
+    expect(permissionDepartmentCheckbox(dialog, "平台开发部")
+      .querySelector(".el-checkbox__input")?.classList.contains("is-indeterminate")).toBe(true);
+    expect(dialog.querySelector('[aria-label="已选择人员"]')?.textContent).not.toContain("孙鑫尧");
 
-    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("确定选择"))!.click();
     await flushPromises();
 
@@ -801,34 +813,15 @@ describe("财务端发票抬头管理", () => {
     expect(savedBody.departmentIds).toEqual([11]);
     expect(savedBody.departmentExcludedEmployeeIds).toEqual([101]);
     expect(savedBody.employeeRules).not.toContainEqual(expect.objectContaining({ employeeId: 101 }));
-    wrapper.unmount();
-  });
 
-  it("重新打开编辑器时按部门排除名单回显成员关闭状态", async () => {
-    mockPlatformPermissionDirectory();
-    const wrapper = await mountAdmin(true);
-    await clickMenu(wrapper, "主体权限");
-    layoutVm(wrapper).permissionProfiles[0].departments = [{
-      id: 11,
-      corpCode: "sebo",
-      corpName: "赛宝绿创能源技术（上海）有限公司",
-      dingDepartmentId: "ding-dept-platform",
-      departmentName: "平台开发部",
-      employeeCount: 2,
-    }];
-    layoutVm(wrapper).permissionProfiles[0].departmentExcludedEmployeeIds = [101];
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
-
-    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
-    await flushPromises();
-    const excludedSwitch = document.body.querySelector<HTMLElement>('[aria-label="孙鑫尧的单独启用权限"]');
-    const inheritedSwitch = document.body.querySelector<HTMLElement>('[aria-label="李晨的单独启用权限"]');
-    expect(excludedSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
-    expect(inheritedSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
-    expect(excludedSwitch?.closest(".el-switch")?.classList.contains("is-disabled")).toBe(false);
-    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
-      .find((row) => row.textContent?.includes("平台开发部"));
-    expect(departmentRow?.querySelector(".el-checkbox")?.classList.contains("is-checked")).toBe(false);
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "取消")!.click();
+    await nextTick();
+    dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    expect(permissionEmployeeRow(dialog, "孙鑫尧").classList.contains("selected")).toBe(false);
+    expect(permissionEmployeeRow(dialog, "李晨").classList.contains("selected")).toBe(true);
     wrapper.unmount();
   });
 
@@ -836,24 +829,16 @@ describe("财务端发票抬头管理", () => {
     const request = mockPlatformPermissionDirectory();
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    layoutVm(wrapper).permissionProfiles[0].departments = [{
-      id: 11,
-      corpCode: "sebo",
-      corpName: "赛宝绿创能源技术（上海）有限公司",
-      dingDepartmentId: "ding-dept-platform",
-      departmentName: "平台开发部",
-      employeeCount: 2,
-    }];
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
-
-    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
-    await flushPromises();
-    const employeeSwitch = document.body.querySelector<HTMLElement>('[aria-label="孙鑫尧的单独启用权限"]');
-    employeeSwitch?.click();
+    layoutVm(wrapper).permissionProfiles[0].departments = [platformDepartment];
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
+    let dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    permissionEmployeeRow(dialog, "孙鑫尧").click();
     await nextTick();
-    employeeSwitch?.click();
+    permissionEmployeeRow(dialog, "孙鑫尧").click();
     await nextTick();
-    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("确定选择"))!.click();
     await flushPromises();
 
@@ -863,14 +848,14 @@ describe("财务端发票抬头管理", () => {
     expect(savedBody.departmentIds).toEqual([11]);
     expect(savedBody.departmentExcludedEmployeeIds).toEqual([]);
 
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
-    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
-    await flushPromises();
-    expect(document.body.querySelector('[aria-label="孙鑫尧的单独启用权限"]')
-      ?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
-    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
-      .find((row) => row.textContent?.includes("平台开发部"));
-    expect(departmentRow?.querySelector(".el-checkbox")?.classList.contains("is-checked")).toBe(true);
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "取消")!.click();
+    await nextTick();
+    dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    expect(permissionEmployeeRow(dialog, "孙鑫尧").classList.contains("selected")).toBe(true);
+    expect(permissionDepartmentCheckbox(dialog, "平台开发部").classList.contains("is-checked")).toBe(true);
     wrapper.unmount();
   });
 
@@ -878,34 +863,25 @@ describe("财务端发票抬头管理", () => {
     mockPlatformPermissionDirectory();
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    layoutVm(wrapper).permissionProfiles[0].departments = [{
-      id: 11,
-      corpCode: "sebo",
-      corpName: "赛宝绿创能源技术（上海）有限公司",
-      dingDepartmentId: "ding-dept-platform",
-      departmentName: "平台开发部",
-      employeeCount: 2,
-    }];
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
-
-    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
-    await flushPromises();
-    const memberSwitches = ["孙鑫尧", "李晨"].map((employeeName) =>
-      document.body.querySelector<HTMLElement>(`[aria-label="${employeeName}的单独启用权限"]`));
-    expect(memberSwitches.every((item) => item?.closest(".el-switch")?.classList.contains("is-checked") === true)).toBe(true);
+    layoutVm(wrapper).permissionProfiles[0].departments = [platformDepartment];
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
+    const dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    const memberRows = ["孙鑫尧", "李晨"].map((name) => permissionEmployeeRow(dialog, name));
+    expect(memberRows.every((row) => row.classList.contains("selected"))).toBe(true);
 
     // 保持一名员工为开启但留下个人编辑痕迹，取消部门仍必须统一关闭。
-    memberSwitches[0]?.click();
+    memberRows[0].click();
     await nextTick();
-    memberSwitches[0]?.click();
+    memberRows[0].click();
     await nextTick();
-    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
-      .find((row) => row.textContent?.includes("赛宝绿创能源技术（上海）有限公司")
-        && row.textContent?.includes("平台开发部"));
-    (departmentRow?.querySelector(".el-checkbox") as HTMLElement).click();
-    await nextTick();
+    permissionDepartmentCheckbox(dialog, "平台开发部").click();
+    await flushPromises();
 
-    expect(memberSwitches.every((item) => item?.closest(".el-switch")?.classList.contains("is-checked") === false)).toBe(true);
+    expect(memberRows.every((row) => !row.classList.contains("selected"))).toBe(true);
+    expect(dialog.querySelector('[aria-label="已选择人员"]')?.textContent).not.toContain("孙鑫尧");
+    expect(dialog.querySelector('[aria-label="已选择人员"]')?.textContent).not.toContain("李晨");
     wrapper.unmount();
   });
 
@@ -938,85 +914,28 @@ describe("财务端发票抬头管理", () => {
       effect: "ALLOW",
     }];
 
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
-    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
-    await flushPromises();
-    expect(document.body.querySelector('[aria-label="孙鑫尧的单独启用权限"]')
-      ?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
+    let dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    expect(permissionEmployeeRow(dialog, "孙鑫尧").classList.contains("selected")).toBe(true);
 
-    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.trim() === "取消")!.click();
     await nextTick();
     await wrapper.get('[aria-label="主体权限配置"]').findAll("button")
       .find((button) => button.text().includes("北京主体"))!.trigger("click");
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
-    (document.body.querySelector(".el-table__expand-icon") as HTMLElement).click();
-    await flushPromises();
-
-    const rehydratedSwitch = document.body.querySelector('[aria-label="孙鑫尧的单独启用权限"]');
-    expect(rehydratedSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
-    expect(rehydratedSwitch?.closest(".el-switch")?.classList.contains("is-disabled")).toBe(false);
+    dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    expect(permissionEmployeeRow(dialog, "孙鑫尧").classList.contains("selected")).toBe(true);
     wrapper.unmount();
   });
 
-  it("撤销部门后分页加载到的旧员工允许规则显示关闭且不再提交", async () => {
-    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = new URL(String(input), "http://localhost");
-      if (url.pathname.endsWith("/directory/organizations")) {
-        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.pathname.endsWith("/directory/departments")) {
-        return new Response(JSON.stringify({ records: [{
-          id: 11,
-          corpCode: "sebo",
-          corpName: "赛宝绿创能源技术（上海）有限公司",
-          dingDepartmentId: "ding-dept-platform",
-          departmentName: "平台开发部",
-          employeeCount: 11,
-        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.pathname.endsWith("/directory/employees")) {
-        const secondPage = url.searchParams.get("pageNum") === "2";
-        const employee = secondPage ? {
-          id: 102,
-          corpCode: "sebo",
-          corpName: "赛宝绿创能源技术（上海）有限公司",
-          dingUserId: "ding-employee-li",
-          employeeNo: "R01411",
-          employeeName: "李晨",
-          departmentId: 11,
-          departmentIds: [11],
-          departmentName: "平台开发部",
-          mobile: "18223148993",
-        } : {
-          id: 101,
-          corpCode: "sebo",
-          corpName: "赛宝绿创能源技术（上海）有限公司",
-          dingUserId: "ding-employee-sun",
-          employeeNo: "R04952",
-          employeeName: "孙鑫尧",
-          departmentId: 11,
-          departmentIds: [11],
-          departmentName: "平台开发部",
-          mobile: "13936725713",
-        };
-        return new Response(JSON.stringify({ records: [employee], total: 11 }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
-    });
+  it("撤销部门后既有员工允许规则显示未选中且不再提交", async () => {
+    const request = mockPlatformPermissionDirectory();
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    layoutVm(wrapper).permissionProfiles[0].departments = [{
-      id: 11,
-      corpCode: "sebo",
-      corpName: "赛宝绿创能源技术（上海）有限公司",
-      dingDepartmentId: "ding-dept-platform",
-      departmentName: "平台开发部",
-      employeeCount: 11,
-    }];
+    layoutVm(wrapper).permissionProfiles[0].departments = [platformDepartment];
     layoutVm(wrapper).permissionProfiles[0].employeeRules = [{
       id: 102,
       corpCode: "sebo",
@@ -1030,20 +949,14 @@ describe("财务端发票抬头管理", () => {
       mobile: "18223148993",
       effect: "ALLOW",
     }];
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
-
-    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
-      .find((row) => row.textContent?.includes("平台开发部"));
-    (departmentRow?.querySelector(".el-table__expand-icon") as HTMLElement).click();
-    await flushPromises();
-    (departmentRow?.querySelector(".el-checkbox") as HTMLElement).click();
-    await nextTick();
-    (document.body.querySelector(".department-member-panel .el-pagination .btn-next") as HTMLElement).click();
+    const dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    permissionDepartmentCheckbox(dialog, "平台开发部").click();
     await flushPromises();
 
-    expect(document.body.querySelector('[aria-label="李晨的单独启用权限"]')
-      ?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
-    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+    expect(permissionEmployeeRow(dialog, "李晨").classList.contains("selected")).toBe(false);
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("确定选择"))!.click();
     await flushPromises();
     const saveRequest = request.mock.calls.find(([input, init]) =>
@@ -1059,38 +972,20 @@ describe("财务端发票抬头管理", () => {
     const request = mockPlatformPermissionDirectory();
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    layoutVm(wrapper).permissionProfiles[0].departments = [{
-      id: 11,
-      corpCode: "sebo",
-      corpName: "赛宝绿创能源技术（上海）有限公司",
-      dingDepartmentId: "ding-dept-platform",
-      departmentName: "平台开发部",
-      employeeCount: 2,
-    }];
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
-
-    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
-      .find((row) => row.textContent?.includes("赛宝绿创能源技术（上海）有限公司")
-        && row.textContent?.includes("平台开发部"));
-    (departmentRow?.querySelector(".el-checkbox") as HTMLElement).click();
-    await nextTick();
-
-    document.body.querySelector<HTMLElement>('[aria-label="员工结果"]')?.click();
-    await nextTick();
+    layoutVm(wrapper).permissionProfiles[0].departments = [platformDepartment];
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
+    const dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    permissionDepartmentCheckbox(dialog, "平台开发部").click();
     await flushPromises();
-    const employeeSwitch = document.body.querySelector<HTMLElement>('[aria-label="孙鑫尧的查看权限"]');
-    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
-    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-disabled")).toBe(false);
-    employeeSwitch?.click();
+    const employeeRow = permissionEmployeeRow(dialog, "孙鑫尧");
+    expect(employeeRow.classList.contains("selected")).toBe(false);
+    employeeRow.click();
     await nextTick();
     expect(layoutVm(wrapper).reenabledEmployeeIds).toEqual([101]);
-    employeeSwitch?.click();
-    await nextTick();
-    expect(layoutVm(wrapper).reenabledEmployeeIds).toEqual([]);
-    employeeSwitch?.click();
-    await nextTick();
 
-    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("确定选择"))!.click();
     await flushPromises();
 
@@ -1104,53 +999,39 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
-  it("取消一个部门时批量关闭该部门成员且不改变其他部门勾选", async () => {
-    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = new URL(String(input), "http://localhost");
-      if (url.pathname.endsWith("/directory/organizations")) {
-        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.pathname.endsWith("/directory/departments")) {
-        return new Response(JSON.stringify({ records: [
-          { id: 11, dingDepartmentId: "dept-11", departmentName: "平台开发部", employeeCount: 1 },
-          { id: 12, dingDepartmentId: "dept-12", departmentName: "项目管理部", employeeCount: 1 },
-        ], total: 2 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.pathname.endsWith("/directory/employees")) {
-        return new Response(JSON.stringify({ records: [{
-          id: 201,
-          dingUserId: "ding-cross-department",
-          employeeNo: "R0201",
-          employeeName: "跨部门员工",
-          departmentId: 11,
-          departmentIds: [11, 12],
-          departmentName: "平台开发部",
-          mobile: "13800000201",
-        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
-    });
+  it("取消一个部门时批量关闭跨部门成员但保留其他部门授权", async () => {
+    const departments = [
+      { ...platformDepartment, dingDepartmentId: "dept-11", employeeCount: 1 },
+      { ...platformDepartment, id: 12, dingDepartmentId: "dept-12", departmentName: "项目管理部", employeeCount: 1 },
+    ];
+    const crossDepartmentEmployee = {
+      id: 201,
+      corpCode: "sebo",
+      corpName: seboOrganization.corpName,
+      dingUserId: "ding-cross-department",
+      employeeNo: "R0201",
+      employeeName: "跨部门员工",
+      departmentId: 11,
+      departmentIds: [11, 12],
+      departmentName: "平台开发部",
+      mobile: "13800000201",
+    };
+    const request = mockPermissionDirectory({ departments, employees: [crossDepartmentEmployee] });
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    layoutVm(wrapper).permissionProfiles[0].departments = [
-      { id: 11, dingDepartmentId: "dept-11", departmentName: "平台开发部", employeeCount: 1 },
-      { id: 12, dingDepartmentId: "dept-12", departmentName: "项目管理部", employeeCount: 1 },
-    ];
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
+    layoutVm(wrapper).permissionProfiles[0].departments = departments;
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
+    const dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    expect(permissionEmployeeRow(dialog, "跨部门员工").classList.contains("selected")).toBe(true);
 
-    const platformRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
-      .find((row) => row.textContent?.includes("平台开发部"));
-    (platformRow?.querySelector(".el-table__expand-icon") as HTMLElement).click();
+    permissionDepartmentCheckbox(dialog, "平台开发部").click();
     await flushPromises();
-    const employeeSwitch = document.body.querySelector<HTMLElement>('[aria-label="跨部门员工的单独启用权限"]');
-    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
+    expect(permissionEmployeeRow(dialog, "跨部门员工").classList.contains("selected")).toBe(false);
+    expect(layoutVm(wrapper).selectedDepartmentIds).toEqual([12]);
 
-    (platformRow?.querySelector(".el-checkbox") as HTMLElement).click();
-    await nextTick();
-    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
-    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-disabled")).toBe(false);
-
-    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("确定选择"))!.click();
     await flushPromises();
     const saveRequest = request.mock.calls.find(([input, init]) =>
@@ -1165,49 +1046,36 @@ describe("财务端发票抬头管理", () => {
   });
 
   it("未展开部门就取消时后续加载的跨部门员工仍回显关闭", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = new URL(String(input), "http://localhost");
-      if (url.pathname.endsWith("/directory/organizations")) {
-        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.pathname.endsWith("/directory/departments")) {
-        return new Response(JSON.stringify({ records: [
-          { id: 11, dingDepartmentId: "dept-11", departmentName: "平台开发部", employeeCount: 1 },
-          { id: 12, dingDepartmentId: "dept-12", departmentName: "项目管理部", employeeCount: 1 },
-        ], total: 2 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.pathname.endsWith("/directory/employees")) {
-        return new Response(JSON.stringify({ records: [{
-          id: 201,
-          dingUserId: "ding-cross-department",
-          employeeNo: "R0201",
-          employeeName: "跨部门员工",
-          departmentId: 12,
-          departmentIds: [11, 12],
-          departmentName: "项目管理部",
-          mobile: "13800000201",
-        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    const departments = [
+      { ...platformDepartment, dingDepartmentId: "dept-11", employeeCount: 1 },
+      { ...platformDepartment, id: 12, dingDepartmentId: "dept-12", departmentName: "项目管理部", employeeCount: 1 },
+    ];
+    mockPermissionDirectory({
+      departments,
+      employees: [{
+        id: 201,
+        corpCode: "sebo",
+        corpName: seboOrganization.corpName,
+        dingUserId: "ding-cross-department",
+        employeeNo: "R0201",
+        employeeName: "跨部门员工",
+        departmentId: 12,
+        departmentIds: [11, 12],
+        departmentName: "项目管理部",
+        mobile: "13800000201",
+      }],
     });
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    layoutVm(wrapper).permissionProfiles[0].departments = [
-      { id: 11, dingDepartmentId: "dept-11", departmentName: "平台开发部", employeeCount: 1 },
-      { id: 12, dingDepartmentId: "dept-12", departmentName: "项目管理部", employeeCount: 1 },
-    ];
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
-
-    const departmentRows = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"));
-    const platformRow = departmentRows.find((row) => row.textContent?.includes("平台开发部"));
-    const projectRow = departmentRows.find((row) => row.textContent?.includes("项目管理部"));
-    (platformRow?.querySelector(".el-checkbox") as HTMLElement).click();
-    await nextTick();
-    (projectRow?.querySelector(".el-table__expand-icon") as HTMLElement).click();
+    layoutVm(wrapper).permissionProfiles[0].departments = departments;
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
+    const dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    permissionDepartmentCheckbox(dialog, "平台开发部").click();
     await flushPromises();
+    await expandPermissionDepartment(dialog, 12);
 
-    const employeeSwitch = document.body.querySelector<HTMLElement>('[aria-label="跨部门员工的单独启用权限"]');
-    expect(employeeSwitch?.closest(".el-switch")?.classList.contains("is-checked")).toBe(false);
+    expect(permissionEmployeeRow(dialog, "跨部门员工").classList.contains("selected")).toBe(false);
     wrapper.unmount();
   });
 
@@ -1215,22 +1083,14 @@ describe("财务端发票抬头管理", () => {
     const request = mockPlatformPermissionDirectory();
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    layoutVm(wrapper).permissionProfiles[0].departments = [{
-      id: 11,
-      corpCode: "sebo",
-      corpName: "赛宝绿创能源技术（上海）有限公司",
-      dingDepartmentId: "ding-dept-platform",
-      departmentName: "平台开发部",
-      employeeCount: 2,
-    }];
+    layoutVm(wrapper).permissionProfiles[0].departments = [platformDepartment];
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
     layoutVm(wrapper).permissionProfiles[0].departmentExcludedEmployeeIds = [999];
-    await openPartialVisibilityEditor(wrapper, "DEPARTMENT");
-
-    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
-      .find((row) => row.textContent?.includes("平台开发部"));
-    (departmentRow?.querySelector(".el-checkbox") as HTMLElement).click();
-    await nextTick();
-    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+    const dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    permissionDepartmentCheckbox(dialog, "平台开发部").click();
+    await flushPromises();
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("确定选择"))!.click();
     await flushPromises();
 
@@ -1243,27 +1103,21 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
-  it("部分可见摘要统计采用两列布局", () => {
-    expect(adminStyles).toContain(".permission-summary-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));");
-  });
-
   it("单独开启员工不会自动勾选其所属部门", async () => {
     const request = mockPlatformPermissionDirectory();
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
-    await openPartialVisibilityEditor(wrapper, "USER");
-
-    document.body.querySelector<HTMLElement>('[aria-label="孙鑫尧的查看权限"]')?.click();
+    layoutVm(wrapper).permissionProfiles[0].departments = [];
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
+    const dialog = await openPartialVisibilityEditor(wrapper);
+    await expandPermissionOrganization(dialog, "sebo");
+    await expandPermissionDepartment(dialog, 11);
+    permissionEmployeeRow(dialog, "孙鑫尧").click();
     await nextTick();
-    document.body.querySelector<HTMLElement>('[aria-label="部门结果"]')?.click();
-    await nextTick();
-    await flushPromises();
-    const departmentRow = Array.from(document.body.querySelectorAll<HTMLElement>(".el-dialog .el-table__row"))
-      .find((row) => row.textContent?.includes("赛宝绿创能源技术（上海）有限公司")
-        && row.textContent?.includes("平台开发部"));
-    expect(departmentRow?.querySelector(".el-checkbox")?.classList.contains("is-checked")).toBe(false);
+    expect(permissionDepartmentCheckbox(dialog, "平台开发部").classList.contains("is-checked")).toBe(false);
+    expect(dialog.querySelector('[aria-label="已选择人员"]')?.textContent).toContain("孙鑫尧");
 
-    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("确定选择"))!.click();
     await flushPromises();
     const saveRequest = request.mock.calls.find(([, init]) => init?.method === "PUT");
@@ -1273,114 +1127,47 @@ describe("财务端发票抬头管理", () => {
     wrapper.unmount();
   });
 
-  it("员工授权弹窗确认选择后立即保存个人权限", async () => {
-    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes("/api/admin/directory/organizations")) {
-        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/departments")) {
-        return new Response(JSON.stringify({ records: [], total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/employees")) {
-        return new Response(JSON.stringify({ records: [{
-          id: 99,
-          corpCode: "sebo",
-          corpName: "赛宝绿创能源技术（上海）有限公司",
-          dingUserId: "ding-sun-xinyao",
-          employeeNo: "R04952",
-          employeeName: "孙鑫尧",
-          departmentId: 99,
-          departmentName: "平台开发部",
-          mobile: "13936725713",
-          permissionEnabled: false,
-        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
-    });
+  it("切换搜索条件后仍保留此前选中的员工并在确认时提交", async () => {
+    const request = mockPlatformPermissionDirectory();
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
+    layoutVm(wrapper).permissionProfiles[0].departments = [];
+    layoutVm(wrapper).permissionProfiles[0].employeeRules = [];
+    const dialog = await openPartialVisibilityEditor(wrapper);
 
-    await openPartialVisibilityEditor(wrapper, "USER");
-    (document.body.querySelector('[aria-label="孙鑫尧的查看权限"]') as HTMLElement).click();
+    await searchPermissionDirectory(dialog, "孙鑫尧");
+    dialog.querySelector<HTMLElement>('[aria-label="联系人 孙鑫尧"]')?.click();
     await nextTick();
-    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
-      .find((button) => button.textContent?.includes("确定选择"))!.click();
-    await flushPromises();
+    await searchPermissionDirectory(dialog, "李晨");
+    expect(dialog.querySelector('[aria-label="已选择人员"]')?.textContent).toContain("孙鑫尧");
+    expect(dialog.querySelector('[aria-label="已选择人员"]')?.textContent).not.toContain("李晨");
 
-    expect(request).toHaveBeenCalledWith("/api/admin/subjects/1/permission-profile", expect.objectContaining({
-      method: "PUT",
-      body: expect.stringContaining('"employeeId":99,"effect":"ALLOW"'),
-    }));
-    wrapper.unmount();
-  });
-
-  it("员工授权翻页后仍保存前一页的权限修改", async () => {
-    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url.includes("/api/admin/directory/organizations")) {
-        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/departments")) {
-        return new Response(JSON.stringify({ records: [], total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/employees")) {
-        const pageNum = new URL(url, "http://localhost").searchParams.get("pageNum");
-        const id = pageNum === "2" ? 102 : 101;
-        return new Response(JSON.stringify({ records: [{
-          id,
-          dingUserId: `ding-employee-${id}`,
-          employeeNo: `SB${id}`,
-          employeeName: pageNum === "2" ? "第二页员工" : "第一页员工",
-          departmentId: 99,
-          departmentName: "平台开发部",
-          mobile: `13800000${id}`,
-          permissionEnabled: false,
-        }], total: 2 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
-    });
-    const wrapper = await mountAdmin(true);
-    await clickMenu(wrapper, "主体权限");
-    await openPartialVisibilityEditor(wrapper, "USER");
-
-    (document.body.querySelector('[aria-label="第一页员工的查看权限"]') as HTMLElement).click();
-    layoutVm(wrapper).directoryPageNum = 2;
-    await layoutVm(wrapper).loadDirectory();
-    await flushPromises();
-    Array.from(document.body.querySelectorAll<HTMLButtonElement>(".el-dialog button"))
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.includes("确定选择"))!.click();
     await flushPromises();
 
     const saveRequest = request.mock.calls.find(([, init]) => init?.method === "PUT");
-    expect(saveRequest?.[1]?.body).toContain('"employeeId":101,"effect":"ALLOW"');
+    const savedBody = JSON.parse(String(saveRequest?.[1]?.body));
+    expect(savedBody.employeeRules).toContainEqual({ employeeId: 101, effect: "ALLOW" });
+    expect(savedBody.employeeRules).not.toContainEqual({ employeeId: 102, effect: "ALLOW" });
     wrapper.unmount();
   });
 
-  it("后端 employeeId 字段返回的既有员工授权可以正确回显", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes("/api/admin/directory/organizations")) {
-        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/departments")) {
-        return new Response(JSON.stringify({ records: [], total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("/api/admin/directory/employees")) {
-        return new Response(JSON.stringify({ records: [{
-          id: 99,
-          corpCode: "sebo",
-          corpName: "赛宝绿创能源技术（上海）有限公司",
-          dingUserId: "ding-sun-xinyao",
-          employeeNo: "R04952",
-          employeeName: "孙鑫尧",
-          departmentId: 99,
-          departmentName: "平台开发部",
-          mobile: "13936725713",
-          permissionEnabled: true,
-        }], total: 1 }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+  it("后端 employeeId 字段返回的既有员工授权会在搜索结果和右侧已选人员中回显", async () => {
+    const employee = {
+      id: 99,
+      corpCode: "sebo",
+      corpName: seboOrganization.corpName,
+      dingUserId: "ding-sun-xinyao",
+      employeeNo: "R04952",
+      employeeName: "孙鑫尧",
+      departmentId: 99,
+      departmentName: "平台开发部",
+      mobile: "13936725713",
+    };
+    mockPermissionDirectory({
+      departments: [{ ...platformDepartment, id: 99 }],
+      employees: [employee],
     });
     const wrapper = await mountAdmin(true);
     await clickMenu(wrapper, "主体权限");
@@ -1393,9 +1180,11 @@ describe("财务端发票抬头管理", () => {
       effect: "ALLOW",
     }];
 
-    await openPartialVisibilityEditor(wrapper, "USER");
+    const dialog = await openPartialVisibilityEditor(wrapper);
+    await searchPermissionDirectory(dialog, "孙鑫尧");
 
-    expect(document.body.querySelector('[aria-label="孙鑫尧的查看权限"]')?.closest(".el-switch")?.classList.contains("is-checked")).toBe(true);
+    expect(dialog.querySelector('[aria-label="联系人 孙鑫尧"]')?.classList.contains("selected")).toBe(true);
+    expect(dialog.querySelector('[aria-label="已选择人员"]')?.textContent).toContain("孙鑫尧");
     wrapper.unmount();
   });
 

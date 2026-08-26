@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.saibao.invoice.mapper.EmployeeInvoiceTitleMapper">
-    <!-- 正向授权并集：个人允许、全员可见或部门允许任一命中即可。所有规则均匹配企业业务编码。 -->
+    <!-- 最终权限仅由全员可见或精确的个人允许授权决定，个人授权同时匹配企业业务编码。 -->
     <sql id="effectiveSubjectPermission">
         AND current_employee.status = 'ACTIVE'
         AND (
@@ -15,29 +15,6 @@
                   AND allowed_user.status = 'ENABLED' AND allowed_user.deleted = 0
             )
             OR s.all_employee_visible = 1
-            OR EXISTS (
-                SELECT 1
-                FROM ding_employee_department employee_department
-                INNER JOIN ding_department department_directory
-                  ON department_directory.id = employee_department.department_id
-                 AND department_directory.status = 'ENABLED'
-                INNER JOIN subject_permission allowed_department
-                  ON allowed_department.target_corp_code = department_directory.corp_code
-                 AND allowed_department.target_id = department_directory.ding_department_id
-                WHERE employee_department.employee_id = current_employee.id
-                  AND allowed_department.subject_id = s.id
-                  AND allowed_department.target_type = 'DEPARTMENT'
-                  AND allowed_department.permission_effect = 'ALLOW'
-                  AND allowed_department.status = 'ENABLED'
-                  AND allowed_department.deleted = 0
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM subject_department_employee_exclusion department_exclusion
-                      WHERE department_exclusion.subject_id = s.id
-                        AND department_exclusion.department_id = employee_department.department_id
-                        AND department_exclusion.employee_id = current_employee.id
-                  )
-            )
         )
     </sql>
 

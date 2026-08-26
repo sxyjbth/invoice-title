@@ -2,6 +2,7 @@ package com.saibao.invoice.controller;
 
 import com.saibao.invoice.dto.DepartmentDirectoryPageQueryDTO;
 import com.saibao.invoice.dto.EmployeeDirectoryPageQueryDTO;
+import com.saibao.invoice.dto.EmployeeSelectionResolveDTO;
 import com.saibao.invoice.service.IDingDirectoryService;
 import com.saibao.invoice.service.IDingDirectorySyncService;
 import com.saibao.invoice.vo.DingDepartmentVO;
@@ -10,6 +11,7 @@ import com.saibao.invoice.vo.DingOrganizationVO;
 import com.saibao.invoice.vo.PageResult;
 import com.saibao.invoice.vo.DingDirectorySyncResultVO;
 import com.saibao.invoice.vo.FinanceAccountVO;
+import com.saibao.invoice.vo.EmployeeSelectionResolveVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springdoc.core.annotations.ParameterObject;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 import java.util.List;
@@ -48,6 +51,13 @@ public class DingDirectoryController {
     @Operation(summary = "分页查询部门", description = "支持按企业和部门名称查询，返回钉钉部门 ID 和直接在职员工数")
     public PageResult<DingDepartmentVO> departments(@Valid @ParameterObject DepartmentDirectoryPageQueryDTO query) {
         return service.pageDepartments(query);
+    }
+
+    @PostMapping("/employee-selections/resolve")
+    @Operation(summary = "批量解析已选员工", description = "将选中的企业、部门和员工合并为去重后的在职员工集合，并按钉钉企业分组返回")
+    public EmployeeSelectionResolveVO resolveEmployeeSelections(
+            @Valid @RequestBody EmployeeSelectionResolveDTO request) {
+        return service.resolveEmployeeSelections(request);
     }
 
     @PostMapping("/sync")

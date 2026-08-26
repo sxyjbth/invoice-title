@@ -179,4 +179,42 @@ class DatabaseMigrationContractTest {
                 .contains("FOREIGN KEY (employee_id) REFERENCES ding_employee (id)")
                 .doesNotContain("REFERENCES ding_employee_department");
     }
+
+    @Test
+    void departmentPermissionMaterializationMigrationProducesCanonicalUserAllowsAndKeepsLegacyTable() throws IOException {
+        Path migration = Path.of("src", "main", "resources", "db", "migration",
+                "V111__materialize_department_permissions_as_user_permissions.sql");
+
+        assertThat(migration).exists();
+        String sql = Files.readString(migration, StandardCharsets.UTF_8);
+        assertThat(sql)
+                .contains("CREATE TEMPORARY TABLE tmp_v111_department_scope")
+                .contains("CREATE TEMPORARY TABLE tmp_v111_unresolved_department_rule")
+                .contains("CREATE TEMPORARY TABLE tmp_v111_resolution_guard")
+                .contains("INSERT INTO tmp_v111_unresolved_department_rule")
+                .contains("INSERT INTO tmp_v111_resolution_guard (guard_key)")
+                .contains("INSERT INTO subject_permission")
+                .contains("'USER', employee.corp_code, employee.ding_user_id, employee.employee_name")
+                .contains("permission_record.target_type = 'DEPARTMENT'")
+                .contains("permission_record.permission_effect = 'ALLOW'")
+                .contains("permission_record.status = 'ENABLED'")
+                .contains("permission_record.deleted = 0")
+                .contains("department.corp_code = permission_record.target_corp_code")
+                .contains("department.ding_department_id = permission_record.target_id")
+                .contains("INNER JOIN ding_employee_department membership")
+                .contains("employee.corp_code = department_scope.target_corp_code")
+                .contains("employee.status = 'ACTIVE'")
+                .contains("NOT EXISTS")
+                .contains("FROM subject_department_employee_exclusion exclusion_record")
+                .contains("SELECT DISTINCT")
+                .contains("ON DUPLICATE KEY UPDATE")
+                .contains("permission_effect = VALUES(permission_effect)")
+                .contains("DELETE exclusion_record")
+                .contains("DELETE permission_record")
+                .doesNotContain("DROP TABLE subject_department_employee_exclusion");
+        assertThat(sql.indexOf("INSERT INTO tmp_v111_resolution_guard (guard_key)"))
+                .isLessThan(sql.indexOf("INSERT INTO subject_permission"));
+        assertThat(sql.indexOf("DELETE exclusion_record"))
+                .isLessThan(sql.indexOf("DELETE permission_record"));
+    }
 }

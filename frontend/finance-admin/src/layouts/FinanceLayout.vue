@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, provide, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, provide, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { storeToRefs } from "pinia";
 import { RouterLink, useRoute, useRouter } from "vue-router";
@@ -263,6 +263,52 @@ const importHistory = ref<ImportHistory[]>([
 ]);
 
 const testMode = import.meta.env.MODE === "test";
+// 仅供 `vite --mode test` 的浏览器评估页使用；Vitest 仍走其请求桩，避免改变单元测试契约。
+const permissionPreviewMode = testMode && !import.meta.env.VITEST;
+const testDirectoryOrganizations: DingOrganization[] = [
+  { corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司" },
+  { corpCode: "walden", corpName: "瓦尔登环境科学研究院（北京）有限公司" },
+];
+const testDirectoryDepartments: DingDepartment[] = [
+  { id: 11, corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司", dingDepartmentId: "sebo-platform", departmentName: "平台开发部", employeeCount: 2 },
+  { id: 12, corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司", dingDepartmentId: "sebo-finance", departmentName: "财务部", employeeCount: 1 },
+  { id: 21, corpCode: "walden", corpName: "瓦尔登环境科学研究院（北京）有限公司", dingDepartmentId: "walden-digital", departmentName: "数智化中心", employeeCount: 2 },
+  { id: 22, corpCode: "walden", corpName: "瓦尔登环境科学研究院（北京）有限公司", dingDepartmentId: "walden-administration", departmentName: "综合管理部", employeeCount: 1 },
+];
+const testDirectoryEmployees: DingEmployee[] = [
+  { id: 101, corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司", dingUserId: "sebo-sun", employeeNo: "R04952", employeeName: "孙鑫尧", departmentId: 11, departmentIds: [11], departmentName: "平台开发部", mobile: "13936725713" },
+  { id: 102, corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司", dingUserId: "sebo-li", employeeNo: "R01411", employeeName: "李晨", departmentId: 11, departmentIds: [11], departmentName: "平台开发部", mobile: "18223148993" },
+  { id: 103, corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司", dingUserId: "sebo-finance", employeeNo: "SB0103", employeeName: "王财务", departmentId: 12, departmentIds: [12], departmentName: "财务部", mobile: "13800000003" },
+  { id: 201, corpCode: "walden", corpName: "瓦尔登环境科学研究院（北京）有限公司", dingUserId: "walden-wang", employeeNo: "W0001", employeeName: "王月", departmentId: 21, departmentIds: [21], departmentName: "数智化中心", mobile: "13800000001" },
+  { id: 202, corpCode: "walden", corpName: "瓦尔登环境科学研究院（北京）有限公司", dingUserId: "walden-du", employeeNo: "W0002", employeeName: "杜婷婷", departmentId: 21, departmentIds: [21], departmentName: "数智化中心", mobile: "13800000002" },
+  { id: 203, corpCode: "walden", corpName: "瓦尔登环境科学研究院（北京）有限公司", dingUserId: "walden-wei", employeeNo: "W0003", employeeName: "韦丽平", departmentId: 22, departmentIds: [22], departmentName: "综合管理部", mobile: "13800000004" },
+];
+
+function cloneTestDirectoryDepartments(departments = testDirectoryDepartments) {
+  return departments.map((department) => ({ ...department }));
+}
+
+function cloneTestDirectoryEmployees(employees = testDirectoryEmployees) {
+  return employees.map((employee) => ({
+    ...employee,
+    departmentIds: [...(employee.departmentIds ?? [])],
+  }));
+}
+
+// 浏览器评估页直接展示双企业的已选人员，便于在不连接后端的情况下确认最终版式。
+if (permissionPreviewMode && permissionProfiles.value[0]) {
+  const previewEmployees = [
+    testDirectoryEmployees[0],
+    testDirectoryEmployees[1],
+    testDirectoryEmployees[3],
+  ].filter((employee): employee is DingEmployee => Boolean(employee));
+  permissionProfiles.value[0] = {
+    ...permissionProfiles.value[0],
+    visibleCount: previewEmployees.length,
+    departments: [],
+    employeeRules: previewEmployees.map((employee) => ({ ...employee, effect: "ALLOW" })),
+  };
+}
 const changePasswordVisible = ref(false);
 const profileMenuVisible = ref(false);
 const financeAccounts = ref<FinanceAccount[]>(testMode ? [{
@@ -336,17 +382,23 @@ const directoryDepartments = ref<DingDepartment[]>([]);
 const directoryOrganizations = ref<DingOrganization[]>([]);
 const directoryCorpCode = ref("");
 const departmentMemberPages = reactive<Record<string, DepartmentMemberPage>>({});
-const loadedDirectoryEmployees = reactive<Record<number, DingEmployee>>({});
-const loadedEmployeeDepartmentIds = reactive<Record<number, number[]>>({});
+const loadedDirectoryEmployees = reactive<Record<string, DingEmployee>>({});
+const loadedEmployeeDepartmentIds = reactive<Record<string, number[]>>({});
 const selectedDepartmentIds = ref<number[]>([]);
 const revokedDepartmentIds = ref<number[]>([]);
 const reenabledEmployeeIds = ref<number[]>([]);
 const departmentExcludedEmployeeIds = ref<number[]>([]);
 const partiallySelectedDepartmentIds = ref<number[]>([]);
-const employeeEnabledDraft = reactive<Record<number, boolean>>({});
-const employeePermissionEdited = reactive<Record<number, boolean>>({});
+const employeeEnabledDraft = reactive<Record<string, boolean>>({});
+const employeePermissionEdited = reactive<Record<string, boolean>>({});
 const employeePermissionStatus = ref<"ALL" | "ENABLED" | "DISABLED">("ALL");
+const directorySearchActive = ref(false);
+const directoryResultType = ref<"ALL" | "USER" | "DEPARTMENT">("ALL");
+const expandedDirectoryCorpCodes = ref<string[]>([]);
+const fullyLoadedDirectoryCorpCodes = ref<string[]>([]);
+const expandedDirectoryDepartmentIds = ref<number[]>([]);
 const selectedPermissionProfileId = ref(1);
+let directorySearchTimer: ReturnType<typeof setTimeout> | null = null;
 
 const titleForm = reactive({
   companyName: "",
@@ -429,6 +481,27 @@ const filteredPermissions = computed(() => permissions.value.filter((permission)
 const activePermissionProfile = computed<SubjectPermissionProfile | null>(() => permissionProfiles.value.find(
   (profile) => profile.id === selectedPermissionProfileId.value,
 ) ?? permissionProfiles.value[0] ?? null);
+const selectedPermissionEmployees = computed<DingEmployee[]>(() => {
+  const selected = new Map<string, DingEmployee>();
+  activePermissionProfile.value?.employeeRules
+    .filter((rule) => rule.effect === "ALLOW")
+    .forEach((rule) => {
+      const employeeId = employeeRuleId(rule);
+      if (employeeId === null) return;
+      const employee = { ...rule, id: employeeId } as DingEmployee;
+      selected.set(employeeIdentityKey(employee), employee);
+    });
+  Object.values(loadedDirectoryEmployees).forEach((employee) => {
+    const employeeKey = employeeIdentityKey(employee);
+    const enabled = employeeEnabledDraft[employeeKey] ?? resolveEmployeeEnabled(employee);
+    if (enabled) selected.set(employeeKey, employee);
+    else selected.delete(employeeKey);
+  });
+  return [...selected.values()].sort((left, right) => {
+    const corpCompare = String(left.corpCode ?? "").localeCompare(String(right.corpCode ?? ""));
+    return corpCompare || left.employeeName.localeCompare(right.employeeName, "zh-CN");
+  });
+});
 watch(activeMenu, (menu) => {
   if (!currentUser.value) return;
   if (menu === "accounts") void loadFinanceAccounts();
@@ -1006,20 +1079,204 @@ async function saveTitleBinding() {
 }
 
 function searchDirectory() {
+  clearDirectorySearchTimer();
   directoryPageNum.value = 1;
+  directorySearchActive.value = Boolean(directoryKeyword.value.trim());
+  permissionForm.targetType = directoryResultType.value;
   void loadDirectory();
 }
 
 function resetDirectorySearch() {
+  clearDirectorySearchTimer();
   directoryKeyword.value = "";
   directoryCorpCode.value = "";
   directoryPageNum.value = 1;
-  void loadDirectory();
+  directorySearchActive.value = false;
+  directoryResultType.value = "ALL";
+  permissionForm.targetType = "ALL";
 }
+
+function clearDirectorySearchTimer() {
+  if (directorySearchTimer === null) return;
+  clearTimeout(directorySearchTimer);
+  directorySearchTimer = null;
+}
+
+function scheduleDirectorySearch() {
+  clearDirectorySearchTimer();
+  if (!directoryKeyword.value.trim()) {
+    resetDirectorySearch();
+    return;
+  }
+  directorySearchTimer = setTimeout(() => {
+    directorySearchTimer = null;
+    searchDirectory();
+  }, 250);
+}
+
+onBeforeUnmount(clearDirectorySearchTimer);
 
 function changePermissionResultType() {
   directoryPageNum.value = 1;
+  permissionForm.targetType = directoryResultType.value;
   void loadDirectory();
+}
+
+function mergeDirectoryDepartments(departments: DingDepartment[]) {
+  const departmentKey = (department: DingDepartment) => `${department.corpCode || "default"}:${department.id}`;
+  const merged = new Map(directoryDepartments.value.map((department) => [departmentKey(department), department]));
+  departments.forEach((department) => merged.set(departmentKey(department), department));
+  directoryDepartments.value = [...merged.values()];
+}
+
+function organizationDepartments(organization: DingOrganization) {
+  return directoryDepartments.value.filter((department) => department.corpCode === organization.corpCode);
+}
+
+function isOrganizationFullySelected(organization: DingOrganization) {
+  const departments = organizationDepartments(organization);
+  return fullyLoadedDirectoryCorpCodes.value.includes(organization.corpCode)
+    && departments.length > 0
+    && departments.every((department) => isDepartmentFullySelected(department.id));
+}
+
+function isOrganizationPartiallySelected(organization: DingOrganization) {
+  const departments = organizationDepartments(organization);
+  if (!departments.length || isOrganizationFullySelected(organization)) return false;
+  return departments.some((department) =>
+    isDepartmentFullySelected(department.id) || isDepartmentPartiallySelected(department));
+}
+
+async function loadOrganizationDepartments(organization: DingOrganization) {
+  if (fullyLoadedDirectoryCorpCodes.value.includes(organization.corpCode)) return;
+  if (permissionPreviewMode) {
+    mergeDirectoryDepartments(cloneTestDirectoryDepartments(
+      testDirectoryDepartments.filter((department) => department.corpCode === organization.corpCode),
+    ));
+    fullyLoadedDirectoryCorpCodes.value = [...new Set([
+      ...fullyLoadedDirectoryCorpCodes.value,
+      organization.corpCode,
+    ])];
+    return;
+  }
+  const pageSize = 100;
+  let pageNum = 1;
+  let loaded = 0;
+  let total = 0;
+  const records: DingDepartment[] = [];
+  do {
+    const query = new URLSearchParams({
+      pageNum: String(pageNum),
+      pageSize: String(pageSize),
+      corpCode: organization.corpCode,
+    });
+    const response = await fetch(`/api/admin/directory/departments?${query}`, { credentials: "include" });
+    const result = await readApi<{ records: DingDepartment[]; total: number }>(response, "部门目录加载失败");
+    const pageRecords = result.records ?? [];
+    records.push(...pageRecords);
+    loaded += pageRecords.length;
+    total = result.total ?? loaded;
+    pageNum += 1;
+  } while (loaded < total && pageNum <= 100);
+  mergeDirectoryDepartments(records);
+  fullyLoadedDirectoryCorpCodes.value = [...new Set([
+    ...fullyLoadedDirectoryCorpCodes.value,
+    organization.corpCode,
+  ])];
+}
+
+async function toggleOrganizationTree(organization: DingOrganization) {
+  const expanded = new Set(expandedDirectoryCorpCodes.value);
+  if (expanded.has(organization.corpCode)) {
+    expanded.delete(organization.corpCode);
+    expandedDirectoryCorpCodes.value = [...expanded];
+    return;
+  }
+  expanded.add(organization.corpCode);
+  expandedDirectoryCorpCodes.value = [...expanded];
+  try {
+    await loadOrganizationDepartments(organization);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "部门目录加载失败");
+  }
+}
+
+async function selectDirectoryOrganization(organization: DingOrganization, selected = true) {
+  try {
+    await loadOrganizationDepartments(organization);
+    const departments = organizationDepartments(organization);
+    await Promise.all(departments.map((department) => loadAllDepartmentMembers(department)));
+    departments.forEach((department) => toggleDepartmentSelection(department.id, selected));
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "企业通讯录加载失败");
+  }
+}
+
+async function loadAllDepartmentMembers(department: DingDepartment) {
+  const page = departmentMemberPage(department);
+  if (page.loaded && page.records.length >= page.total) {
+    page.records.forEach((employee) => hydrateDirectoryEmployee(employee, department.id));
+    return;
+  }
+  if (permissionPreviewMode) {
+    page.records = cloneTestDirectoryEmployees(testDirectoryEmployees.filter((employee) =>
+      (!department.corpCode || employee.corpCode === department.corpCode)
+      && (employee.departmentId === department.id || employee.departmentIds?.includes(department.id))));
+    page.total = page.records.length;
+    page.pageNum = 1;
+    page.loaded = true;
+    page.error = "";
+    page.records.forEach((employee) => hydrateDirectoryEmployee(employee, department.id));
+    return;
+  }
+  page.loading = true;
+  page.error = "";
+  try {
+    const pageSize = 100;
+    let pageNum = 1;
+    let loaded = 0;
+    let total = 0;
+    const records: DingEmployee[] = [];
+    do {
+      const query = new URLSearchParams({
+        pageNum: String(pageNum),
+        pageSize: String(pageSize),
+        departmentId: String(department.id),
+      });
+      if (department.corpCode) query.set("corpCode", department.corpCode);
+      const response = await fetch(`/api/admin/directory/employees?${query}`, { credentials: "include" });
+      const result = await readApi<{ records: DingEmployee[]; total: number }>(response, "部门成员加载失败");
+      const currentRecords = result.records ?? [];
+      records.push(...currentRecords);
+      loaded += currentRecords.length;
+      total = result.total ?? loaded;
+      pageNum += 1;
+    } while (loaded < total && pageNum <= 100);
+    page.records = [...new Map(records.map((employee) => [employee.id, employee])).values()];
+    page.total = total;
+    page.pageNum = 1;
+    page.loaded = true;
+    page.records.forEach((employee) => hydrateDirectoryEmployee(employee, department.id));
+  } catch (error) {
+    page.records = [];
+    page.total = 0;
+    page.loaded = false;
+    page.error = error instanceof Error ? error.message : "部门成员加载失败";
+  } finally {
+    page.loading = false;
+  }
+}
+
+async function toggleDepartmentTree(department: DingDepartment) {
+  const expanded = new Set(expandedDirectoryDepartmentIds.value);
+  if (expanded.has(department.id)) {
+    expanded.delete(department.id);
+    expandedDirectoryDepartmentIds.value = [...expanded];
+    return;
+  }
+  expanded.add(department.id);
+  expandedDirectoryDepartmentIds.value = [...expanded];
+  await loadAllDepartmentMembers(department);
 }
 
 function departmentMemberKey(department: DingDepartment) {
@@ -1044,26 +1301,31 @@ function departmentMemberPage(department: DingDepartment) {
 }
 
 function hydrateDirectoryEmployee(employee: DingEmployee, membershipDepartmentId?: number) {
-  loadedDirectoryEmployees[employee.id] = employee;
+  const employeeKey = employeeIdentityKey(employee);
+  loadedDirectoryEmployees[employeeKey] = employee;
   const departmentIds = new Set([
-    ...(loadedEmployeeDepartmentIds[employee.id] ?? []),
+    ...(loadedEmployeeDepartmentIds[employeeKey] ?? []),
     ...(employee.departmentIds ?? []),
     employee.departmentId,
     membershipDepartmentId,
   ].filter((departmentId): departmentId is number => Number.isFinite(departmentId)));
-  loadedEmployeeDepartmentIds[employee.id] = [...departmentIds];
-  if (!employeePermissionEdited[employee.id]) {
-    employeeEnabledDraft[employee.id] = resolveEmployeeEnabled(employee);
+  loadedEmployeeDepartmentIds[employeeKey] = [...departmentIds];
+  if (!employeePermissionEdited[employeeKey]) {
+    employeeEnabledDraft[employeeKey] = resolveEmployeeEnabled(employee);
     const explicitRule = activePermissionProfile.value?.employeeRules
-      .find((rule) => employeeRuleId(rule) === employee.id);
+      .find((rule) => employeeRuleMatches(rule, employee));
     const revokedExplicitAllow = explicitRule?.effect === "ALLOW"
       && [...departmentIds].some((departmentId) => revokedDepartmentIds.value.includes(departmentId))
       && !reenabledEmployeeIds.value.includes(employee.id);
-    if (revokedExplicitAllow) employeePermissionEdited[employee.id] = true;
+    if (revokedExplicitAllow) employeePermissionEdited[employeeKey] = true;
   }
 }
 
 async function loadDirectoryOrganizations() {
+  if (permissionPreviewMode) {
+    directoryOrganizations.value = testDirectoryOrganizations.map((organization) => ({ ...organization }));
+    return;
+  }
   try {
     const response = await fetch("/api/admin/directory/organizations", { credentials: "include" });
     const result = await readApi<DingOrganization[]>(response, "企业目录加载失败");
@@ -1077,6 +1339,18 @@ async function loadDirectoryOrganizations() {
 async function loadDepartmentMembers(department: DingDepartment, force = false) {
   const page = departmentMemberPage(department);
   if (page.loaded && !force) return;
+  if (permissionPreviewMode) {
+    const records = cloneTestDirectoryEmployees(testDirectoryEmployees.filter((employee) =>
+      (!department.corpCode || employee.corpCode === department.corpCode)
+      && (employee.departmentId === department.id || employee.departmentIds?.includes(department.id))));
+    const offset = (page.pageNum - 1) * page.pageSize;
+    page.records = records.slice(offset, offset + page.pageSize);
+    page.total = records.length;
+    page.error = "";
+    page.loaded = true;
+    page.records.forEach((employee) => hydrateDirectoryEmployee(employee, department.id));
+    return;
+  }
   page.loading = true;
   page.error = "";
   const query = new URLSearchParams({
@@ -1135,8 +1409,9 @@ function toggleDepartmentSelection(departmentId: number, selected: boolean) {
   Object.values(loadedDirectoryEmployees)
     .filter((employee) => employeeDepartmentIds(employee).includes(departmentId))
     .forEach((employee) => {
-      employeeEnabledDraft[employee.id] = selected;
-      employeePermissionEdited[employee.id] = true;
+      const employeeKey = employeeIdentityKey(employee);
+      employeeEnabledDraft[employeeKey] = selected;
+      employeePermissionEdited[employeeKey] = true;
       reenabledEmployeeIds.value = reenabledEmployeeIds.value.filter((employeeId) => employeeId !== employee.id);
       if (selected || !employeeDepartmentIds(employee).some((employeeDepartmentId) => ids.has(employeeDepartmentId))) {
         excludedEmployeeIds.delete(employee.id);
@@ -1156,7 +1431,13 @@ function isDepartmentFullySelected(departmentId: number) {
   if (partiallySelectedDepartmentIds.value.includes(departmentId)) return false;
   return !Object.values(loadedDirectoryEmployees).some((employee) =>
     employeeDepartmentIds(employee).includes(departmentId)
-    && employeeEnabledDraft[employee.id] === false);
+    && employeeEnabledDraft[employeeIdentityKey(employee)] === false);
+}
+
+function loadedDepartmentIdsForEmployeeId(employeeId: number) {
+  return Object.entries(loadedDirectoryEmployees)
+    .filter(([, employee]) => employee.id === employeeId)
+    .flatMap(([employeeKey]) => loadedEmployeeDepartmentIds[employeeKey] ?? []);
 }
 
 function refreshDepartmentPartialSelection(departmentIds: number[]) {
@@ -1166,9 +1447,9 @@ function refreshDepartmentPartialSelection(departmentIds: number[]) {
     .filter((departmentId) => selectedDepartmentIds.value.includes(departmentId))
     .forEach((departmentId) => {
       const hasKnownExcludedMember = [...excludedIds].some((employeeId) =>
-        (loadedEmployeeDepartmentIds[employeeId] ?? []).includes(departmentId));
+        loadedDepartmentIdsForEmployeeId(employeeId).includes(departmentId));
       const hasUnknownExcludedMember = [...excludedIds].some((employeeId) =>
-        !(loadedEmployeeDepartmentIds[employeeId]?.length));
+        !loadedDepartmentIdsForEmployeeId(employeeId).length);
       if (hasKnownExcludedMember || (hasUnknownExcludedMember && partialIds.has(departmentId))) {
         partialIds.add(departmentId);
       } else {
@@ -1182,7 +1463,7 @@ function employeeDepartmentIds(employee: DingEmployee) {
   return [...new Set([
     ...(employee.departmentIds ?? []),
     employee.departmentId,
-    ...(loadedEmployeeDepartmentIds[employee.id] ?? []),
+    ...(loadedEmployeeDepartmentIds[employeeIdentityKey(employee)] ?? []),
   ].filter((departmentId): departmentId is number => Number.isFinite(departmentId)))];
 }
 
@@ -1192,7 +1473,7 @@ function employeeInheritedBySelectedDepartment(employee: DingEmployee) {
 }
 
 function handleEmployeePermissionChange(employee: DingEmployee, enabled: boolean) {
-  employeePermissionEdited[employee.id] = true;
+  employeePermissionEdited[employeeIdentityKey(employee)] = true;
   const excludedEmployeeIds = new Set(departmentExcludedEmployeeIds.value);
   if (!enabled && employeeInheritedBySelectedDepartment(employee)) excludedEmployeeIds.add(employee.id);
   else excludedEmployeeIds.delete(employee.id);
@@ -1215,6 +1496,32 @@ function handleEmployeePermissionChange(employee: DingEmployee, enabled: boolean
   } else {
     refreshDepartmentPartialSelection(selectedEmployeeDepartmentIds);
   }
+}
+
+function isEmployeeSelected(employee: DingEmployee) {
+  return employeeEnabledDraft[employeeIdentityKey(employee)] ?? resolveEmployeeEnabled(employee);
+}
+
+function isDepartmentPartiallySelected(department: DingDepartment) {
+  const members = departmentMemberPage(department).records;
+  if (!members.length) return partiallySelectedDepartmentIds.value.includes(department.id);
+  const selectedCount = members.filter(isEmployeeSelected).length;
+  return selectedCount > 0 && selectedCount < members.length;
+}
+
+function selectDirectoryEmployee(employee: DingEmployee, enabled = true) {
+  hydrateDirectoryEmployee(employee, employee.departmentId);
+  employeeEnabledDraft[employeeIdentityKey(employee)] = enabled;
+  handleEmployeePermissionChange(employee, enabled);
+}
+
+async function selectDirectoryDepartment(department: DingDepartment, selected = true) {
+  await loadAllDepartmentMembers(department);
+  toggleDepartmentSelection(department.id, selected);
+}
+
+function removeSelectedDirectoryEmployee(employee: DingEmployee) {
+  selectDirectoryEmployee(employee, false);
 }
 
 async function initializePermissionProfiles() {
@@ -1245,6 +1552,8 @@ async function initializePermissionProfiles() {
     selectedPermissionProfileId.value = permissionProfiles.value[0].id;
     const loaded = await loadPermissionProfiles(permissionProfiles.value.map((profile) => profile.id), loadPermissionProfile);
     if (!loaded) ElMessage.error("主体权限加载失败");
+    const profile = activePermissionProfile.value;
+    if (profile) await preparePermissionProfileEmployeeState(profile);
   } else {
     selectedPermissionProfileId.value = 0;
   }
@@ -1273,6 +1582,8 @@ async function selectPermissionProfile(subjectId: number) {
   selectedPermissionProfileId.value = subjectId;
   try {
     await loadPermissionProfile(subjectId);
+    const profile = activePermissionProfile.value;
+    if (profile) await preparePermissionProfileEmployeeState(profile);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "主体权限加载失败");
   }
@@ -1282,6 +1593,32 @@ async function loadDirectory() {
   const profile = activePermissionProfile.value;
   if (!profile) return;
   directoryLoading.value = true;
+  if (permissionPreviewMode) {
+    const normalizedKeyword = directoryKeyword.value.trim().toLocaleLowerCase("zh-CN");
+    const matchesKeyword = (values: Array<string | undefined>) => !normalizedKeyword
+      || values.some((value) => String(value ?? "").toLocaleLowerCase("zh-CN").includes(normalizedKeyword));
+    const matchesCorporation = (corpCode?: string) => !directoryCorpCode.value || corpCode === directoryCorpCode.value;
+    const departments = cloneTestDirectoryDepartments(testDirectoryDepartments.filter((department) =>
+      matchesCorporation(department.corpCode)
+      && matchesKeyword([department.departmentName, department.corpName, department.corpCode])));
+    const employees = cloneTestDirectoryEmployees(testDirectoryEmployees.filter((employee) =>
+      matchesCorporation(employee.corpCode)
+      && matchesKeyword([
+        employee.employeeName,
+        employee.employeeNo,
+        employee.departmentName,
+        employee.mobile,
+        employee.corpName,
+        employee.corpCode,
+      ])));
+
+    directoryDepartments.value = permissionForm.targetType === "USER" ? [] : departments;
+    directoryEmployees.value = permissionForm.targetType === "DEPARTMENT" ? [] : employees;
+    directoryEmployees.value.forEach((employee) => hydrateDirectoryEmployee(employee));
+    directoryTotal.value = directoryDepartments.value.length + directoryEmployees.value.length;
+    directoryLoading.value = false;
+    return;
+  }
   const createQuery = (targetType: "USER" | "DEPARTMENT") => {
     const query = new URLSearchParams({
       pageNum: String(directoryPageNum.value),
@@ -1318,29 +1655,49 @@ async function loadDirectory() {
   }
 }
 
+function resetPermissionEmployeeState() {
+  Object.keys(employeeEnabledDraft).forEach((key) => delete employeeEnabledDraft[key]);
+  Object.keys(employeePermissionEdited).forEach((key) => delete employeePermissionEdited[key]);
+  Object.keys(loadedDirectoryEmployees).forEach((key) => delete loadedDirectoryEmployees[key]);
+  Object.keys(loadedEmployeeDepartmentIds).forEach((key) => delete loadedEmployeeDepartmentIds[key]);
+}
+
+async function hydratePermissionProfileMembers(profile: SubjectPermissionProfile) {
+  if (profile.allEmployeesVisible || !profile.departments.length) return;
+  await Promise.all(profile.departments.map((department) => loadAllDepartmentMembers(department)));
+}
+
+async function preparePermissionProfileEmployeeState(profile: SubjectPermissionProfile) {
+  resetPermissionEmployeeState();
+  await hydratePermissionProfileMembers(profile);
+}
+
 function openPermissionEditor(targetType: "USER" | "DEPARTMENT") {
   const profile = activePermissionProfile.value;
   if (!profile) return;
-  permissionForm.targetType = targetType;
+  void targetType;
+  permissionForm.targetType = "ALL";
   permissionForm.subjectName = profile.subjectName;
   directoryKeyword.value = "";
   directoryCorpCode.value = "";
   directoryPageNum.value = 1;
+  directorySearchActive.value = false;
+  directoryResultType.value = "ALL";
+  expandedDirectoryCorpCodes.value = [];
+  fullyLoadedDirectoryCorpCodes.value = [];
+  expandedDirectoryDepartmentIds.value = [];
   employeePermissionStatus.value = "ALL";
   selectedDepartmentIds.value = profile.departments.map((department) => department.id);
   revokedDepartmentIds.value = [];
   reenabledEmployeeIds.value = [];
   departmentExcludedEmployeeIds.value = [...(profile.departmentExcludedEmployeeIds ?? [])];
   partiallySelectedDepartmentIds.value = [...(profile.partiallySelectedDepartmentIds ?? [])];
-  Object.keys(employeeEnabledDraft).forEach((key) => delete employeeEnabledDraft[Number(key)]);
-  Object.keys(employeePermissionEdited).forEach((key) => delete employeePermissionEdited[Number(key)]);
-  Object.keys(loadedDirectoryEmployees).forEach((key) => delete loadedDirectoryEmployees[Number(key)]);
-  Object.keys(loadedEmployeeDepartmentIds).forEach((key) => delete loadedEmployeeDepartmentIds[Number(key)]);
-  Object.values(departmentMemberPages).forEach((page) => {
-    page.records.forEach((employee) => hydrateDirectoryEmployee(employee, page.departmentId));
-  });
+  resetPermissionEmployeeState();
   permissionDialogVisible.value = true;
-  void Promise.all([loadDirectoryOrganizations(), loadDirectory()]);
+  void (async () => {
+    await Promise.all([loadDirectoryOrganizations(), loadDirectory(), hydratePermissionProfileMembers(profile)]);
+    await Promise.all(directoryOrganizations.value.map((organization) => loadOrganizationDepartments(organization)));
+  })();
 }
 
 function inheritedEmployeeEnabled(employee: DingEmployee) {
@@ -1353,13 +1710,23 @@ function inheritedEmployeeEnabled(employee: DingEmployee) {
 }
 
 function employeeRuleId(rule: EmployeeRule) {
-  return rule.id ?? rule.employeeId;
+  const value = Number(rule.employeeId ?? rule.id);
+  return Number.isFinite(value) ? value : null;
+}
+
+function employeeIdentityKey(employee: Pick<DingEmployee, "id" | "corpCode">) {
+  return `${employee.corpCode || "default"}:${employee.id}`;
+}
+
+function employeeRuleMatches(rule: EmployeeRule, employee: DingEmployee) {
+  if (employeeRuleId(rule) !== employee.id) return false;
+  return !rule.corpCode || !employee.corpCode || rule.corpCode === employee.corpCode;
 }
 
 /** 部门排除或本次撤销部门优先关闭成员；其余权限取全员、部门与员工 ALLOW 规则的并集。 */
 function resolveEmployeeEnabled(employee: DingEmployee) {
   if (departmentExcludedEmployeeIds.value.includes(employee.id)) return false;
-  const explicitRule = activePermissionProfile.value?.employeeRules.find((rule) => employeeRuleId(rule) === employee.id);
+  const explicitRule = activePermissionProfile.value?.employeeRules.find((rule) => employeeRuleMatches(rule, employee));
   const revokedByDepartment = employeeDepartmentIds(employee)
     .some((departmentId) => revokedDepartmentIds.value.includes(departmentId));
   const explicitlyReenabled = reenabledEmployeeIds.value.includes(employee.id);
@@ -1407,6 +1774,10 @@ async function savePermissionConfiguration(): Promise<boolean> {
   if (!profile) return false;
   permissionSaving.value = true;
   try {
+    if (permissionPreviewMode) {
+      ElMessage.success(`${profile.subjectName}权限已保存并立即生效`);
+      return true;
+    }
     const response = await fetch(`/api/admin/subjects/${profile.id}/permission-profile`, {
       method: "PUT",
       credentials: "include",
@@ -1421,7 +1792,9 @@ async function savePermissionConfiguration(): Promise<boolean> {
         departmentExcludedEmployeeIds: departmentExcludedEmployeeIds.value,
         employeeRules: profile.employeeRules
           .filter((rule) => rule.effect === "ALLOW")
-          .map((rule) => ({ employeeId: employeeRuleId(rule), effect: "ALLOW" })),
+          .map(employeeRuleId)
+          .filter((employeeId): employeeId is number => employeeId !== null)
+          .map((employeeId) => ({ employeeId, effect: "ALLOW" })),
       }),
     });
     if (!response.ok) await readApi(response, "权限保存失败");
@@ -1452,17 +1825,23 @@ async function applyPermissionSelection() {
     else selected.delete(department.id);
   });
   profile.departments = [...selected.values()];
-  const rules = new Map(profile.employeeRules
+  const rules = new Map<string, EmployeeRule>();
+  profile.employeeRules
     .filter((rule) => rule.effect === "ALLOW")
-    .map((rule) => [employeeRuleId(rule), rule]));
-  Object.entries(employeeEnabledDraft).forEach(([employeeId, enabled]) => {
-    const numericEmployeeId = Number(employeeId);
-    if (!employeePermissionEdited[numericEmployeeId]) return;
-    const employee = loadedDirectoryEmployees[numericEmployeeId];
+    .forEach((rule) => {
+      const employeeId = employeeRuleId(rule);
+      if (employeeId !== null) {
+        const employee = { ...rule, id: employeeId } as DingEmployee;
+        rules.set(employeeIdentityKey(employee), rule);
+      }
+    });
+  Object.entries(employeeEnabledDraft).forEach(([employeeKey, enabled]) => {
+    if (!employeePermissionEdited[employeeKey]) return;
+    const employee = loadedDirectoryEmployees[employeeKey];
     if (!employee) return;
     const inheritedEnabled = inheritedEmployeeEnabled(employee);
-    if (!enabled || inheritedEnabled) rules.delete(employee.id);
-    else rules.set(employee.id, { ...employee, effect: "ALLOW" });
+    if (!enabled || inheritedEnabled) rules.delete(employeeKey);
+    else rules.set(employeeKey, { ...employee, effect: "ALLOW" });
   });
   profile.employeeRules = [...rules.values()];
   profile.departmentExcludedEmployeeIds = [...departmentExcludedEmployeeIds.value];
@@ -1484,7 +1863,7 @@ provide(financeLayoutKey, {
   openSubjectDialog, openSubjectEditor, openTitleBinding, openTitleEditor, pageNum, pageSize,
   permissionDialogVisible, permissionForm, permissionProfiles, permissionSaving, resetCreateForm,
   resetDirectorySearch, searchDirectory, searchFinanceAccounts,
-  selectPermissionProfile, selectedDepartmentIds, selectedPermissionProfileId, selectStatus,
+  selectPermissionProfile, selectedDepartmentIds, selectedPermissionEmployees, selectedPermissionProfileId, selectStatus,
   statusClass, statusLabel, statusOptions, subjectDialogVisible, subjectForm, subjectKeyword,
   subjectPageNum, subjectPageSize, subjectSaving, subjects, subjectStatus, switchMenu, titleBindingSaving,
   titleBindingVisible, titleForm, titleSaving, titles, updateAllEmployeesVisibility,
@@ -1648,113 +2027,142 @@ provide(financeLayoutKey, {
       <template #footer><el-button @click="subjectDialogVisible = false">取消</el-button><el-button type="primary" :loading="subjectSaving" @click="saveSubject">保存主体</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="permissionDialogVisible" title="编辑部分可见范围" width="1180px" class="partial-permission-dialog">
-      <section class="partial-permission-editor">
-        <section class="directory-picker">
-          <header>
-            <div><strong>{{ permissionForm.subjectName }}</strong></div>
-            <div class="directory-search-actions">
-              <div class="directory-organization-filter" aria-label="部分可见企业筛选">
-                <el-select v-model="directoryCorpCode" placeholder="全部企业" @change="changeDirectoryOrganization">
-                  <el-option label="全部企业" value="" />
-                  <el-option v-for="organization in directoryOrganizations" :key="organization.corpCode" :label="organization.corpName || organization.corpCode" :value="organization.corpCode" />
-                </el-select>
-              </div>
-              <el-input v-model="directoryKeyword" clearable placeholder="搜索部门、姓名、工号或手机号" :prefix-icon="Search" @keyup.enter="searchDirectory" />
-              <el-button type="primary" :icon="Search" @click="searchDirectory">搜索</el-button>
-              <el-button @click="resetDirectorySearch">重置</el-button>
-            </div>
-          </header>
-          <el-radio-group v-model="permissionForm.targetType" aria-label="部分可见结果类型" class="partial-result-type" size="small" @change="changePermissionResultType">
-            <el-radio-button value="ALL" aria-label="全部结果">全部结果</el-radio-button>
-            <el-radio-button value="DEPARTMENT" aria-label="部门结果">部门</el-radio-button>
-            <el-radio-button value="USER" aria-label="员工结果">员工</el-radio-button>
-          </el-radio-group>
-          <div v-if="permissionForm.targetType !== 'DEPARTMENT'" class="directory-status-filter">
-            <span>员工权限</span>
-            <el-radio-group v-model="employeePermissionStatus" aria-label="员工权限状态筛选" size="small" @change="directoryPageNum = 1; loadDirectory()">
-              <el-radio-button value="ALL">全部</el-radio-button>
-              <el-radio-button value="ENABLED">已启用</el-radio-button>
-              <el-radio-button value="DISABLED">已关闭</el-radio-button>
-            </el-radio-group>
+    <el-dialog
+      v-model="permissionDialogVisible"
+      title="编辑部分可见范围"
+      width="1120px"
+      class="partial-permission-dialog"
+      aria-label="编辑可见范围"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+    >
+      <section class="permission-scope-editor" aria-label="编辑可见范围">
+        <section class="permission-directory-pane" aria-label="企业部门员工选择树">
+          <div class="permission-directory-search">
+            <el-icon><Search /></el-icon>
+            <input
+              v-model="directoryKeyword"
+              type="text"
+              aria-label="搜索部门或员工"
+              placeholder="搜索姓名、工号、部门或手机号"
+              @input="scheduleDirectorySearch"
+              @keyup.enter="searchDirectory"
+            />
+            <button v-if="directoryKeyword" type="button" aria-label="清空搜索" @click="resetDirectorySearch">×</button>
           </div>
-          <p v-if="permissionForm.targetType === 'ALL'" class="directory-result-heading">部门</p>
-          <el-table v-if="permissionForm.targetType !== 'USER'" v-loading="directoryLoading" :data="directoryDepartments" :height="permissionForm.targetType === 'ALL' ? 230 : 390" @expand-change="handleDepartmentExpand">
-          <el-table-column width="70">
-            <template #default="{ row }"><el-checkbox :model-value="isDepartmentFullySelected(row.id)" @change="toggleDepartmentSelection(row.id, Boolean($event))" /></template>
-          </el-table-column>
-          <el-table-column type="expand" width="52">
-            <template #default="{ row }">
-              <section class="department-member-panel">
-                <el-alert v-if="departmentMemberPage(row).error" type="error" :closable="false" :title="departmentMemberPage(row).error">
-                  <template #default><el-button link type="primary" @click="loadDepartmentMembers(row, true)">重新加载</el-button></template>
-                </el-alert>
-                <el-table
-                  v-else
-                  v-loading="departmentMemberPage(row).loading"
-                  :data="departmentMemberPage(row).records"
-                  empty-text="该部门暂无在职员工"
-                  size="small"
+
+          <template v-if="directorySearchActive">
+            <div class="permission-search-tabs" role="tablist" aria-label="搜索结果类型">
+              <button type="button" role="tab" :aria-selected="directoryResultType === 'ALL'" :class="{ active: directoryResultType === 'ALL' }" @click="directoryResultType = 'ALL'; changePermissionResultType()">全部</button>
+              <button type="button" role="tab" :aria-selected="directoryResultType === 'USER'" :class="{ active: directoryResultType === 'USER' }" @click="directoryResultType = 'USER'; changePermissionResultType()">联系人</button>
+              <button type="button" role="tab" :aria-selected="directoryResultType === 'DEPARTMENT'" :class="{ active: directoryResultType === 'DEPARTMENT' }" @click="directoryResultType = 'DEPARTMENT'; changePermissionResultType()">部门</button>
+            </div>
+            <div v-loading="directoryLoading" class="permission-search-results">
+              <section v-if="directoryResultType !== 'DEPARTMENT'" class="permission-search-group">
+                <h4>联系人</h4>
+                <button
+                  v-for="employee in directoryEmployees"
+                  :key="`employee-${employeeIdentityKey(employee)}`"
+                  type="button"
+                  class="permission-contact-card"
+                  :class="{ selected: isEmployeeSelected(employee) }"
+                  :aria-label="`联系人 ${employee.employeeName}`"
+                  @click="selectDirectoryEmployee(employee, true)"
                 >
-                  <el-table-column prop="employeeName" label="姓名" min-width="110" />
-                  <el-table-column prop="employeeNo" label="工号" min-width="120" />
-                  <el-table-column prop="departmentName" label="部门" min-width="150" />
-                  <el-table-column prop="mobile" label="手机号" min-width="140" />
-                  <el-table-column label="单独启用" min-width="110" align="center">
-                    <template #default="{ row: employee }">
-                      <el-switch
-                        v-model="employeeEnabledDraft[employee.id]"
-                        :aria-label="`${employee.employeeName}的单独启用权限`"
-                        :aria-checked="employeeEnabledDraft[employee.id]"
-                        inline-prompt
-                        active-text="启"
-                        inactive-text="关"
-                        @change="handleEmployeePermissionChange(employee, Boolean($event))"
-                      />
-                    </template>
-                  </el-table-column>
-                </el-table>
-                <el-pagination
-                  v-model:current-page="departmentMemberPage(row).pageNum"
-                  v-model:page-size="departmentMemberPage(row).pageSize"
-                  :aria-label="`${row.departmentName}成员分页`"
-                  :total="departmentMemberPage(row).total"
-                  :page-sizes="[10,20,50,100]"
-                  layout="total, sizes, prev, pager, next"
-                  size="small"
-                  @current-change="loadDepartmentMembers(row, true)"
-                  @size-change="departmentMemberPage(row).pageNum = 1; loadDepartmentMembers(row, true)"
-                />
+                  <span class="permission-person-avatar">{{ employee.employeeName.slice(0, 1) }}</span>
+                  <span><strong>{{ employee.employeeName }}</strong><small>{{ employee.employeeNo }} · {{ employee.departmentName }}</small><small>{{ employee.mobile }} · {{ employee.corpName || employee.corpCode }}</small></span>
+                </button>
               </section>
-            </template>
-          </el-table-column>
-          <el-table-column label="所属企业" min-width="180"><template #default="{ row }">{{ row.corpName || row.corpCode || '历史企业' }}</template></el-table-column>
-          <el-table-column prop="departmentName" label="部门名称" min-width="240" />
-          <el-table-column prop="employeeCount" label="在职员工" min-width="120"><template #default="{ row }">{{ row.employeeCount }} 人</template></el-table-column>
-          </el-table>
-          <p v-if="permissionForm.targetType === 'ALL'" class="directory-result-heading">员工</p>
-          <el-table v-if="permissionForm.targetType !== 'DEPARTMENT'" v-loading="directoryLoading" :data="directoryEmployees" :height="permissionForm.targetType === 'ALL' ? 230 : 390">
-            <el-table-column label="所属企业" min-width="180"><template #default="{ row }">{{ row.corpName || row.corpCode || '历史企业' }}</template></el-table-column>
-            <el-table-column prop="employeeName" label="姓名" min-width="100" />
-            <el-table-column prop="employeeNo" label="工号" min-width="100" />
-            <el-table-column prop="departmentName" label="部门" min-width="130" />
-            <el-table-column prop="mobile" label="手机号" min-width="130" />
-            <el-table-column label="查看权限" min-width="110" align="center">
-              <template #default="{ row }">
-                <el-switch
-                  v-model="employeeEnabledDraft[row.id]"
-                  :aria-label="`${row.employeeName}的查看权限`"
-                  :aria-checked="employeeEnabledDraft[row.id]"
-                  inline-prompt
-                  active-text="启"
-                  inactive-text="关"
-                  @change="handleEmployeePermissionChange(row, Boolean($event))"
+              <section v-if="directoryResultType !== 'USER'" class="permission-search-group">
+                <h4>部门</h4>
+                <button
+                  v-for="department in directoryDepartments"
+                  :key="`department-${department.id}`"
+                  type="button"
+                  class="permission-department-card"
+                  :class="{ selected: isDepartmentFullySelected(department.id) }"
+                  :aria-label="`部门 ${department.departmentName}`"
+                  @click="selectDirectoryDepartment(department, true)"
+                >
+                  <span class="permission-department-icon"><el-icon><OfficeBuilding /></el-icon></span>
+                  <span><strong>{{ department.departmentName }}</strong><small>{{ department.corpName || department.corpCode }}</small></span>
+                  <small>{{ department.employeeCount }} 人</small>
+                </button>
+              </section>
+              <p v-if="!directoryLoading && !directoryEmployees.length && !directoryDepartments.length" class="permission-empty">未找到匹配的联系人或部门</p>
+            </div>
+          </template>
+
+          <div v-else v-loading="directoryLoading" class="permission-directory-tree">
+            <article v-for="organization in directoryOrganizations" :key="organization.corpCode" class="permission-corp-node">
+              <div class="permission-corp-row">
+                <el-checkbox
+                  :model-value="isOrganizationFullySelected(organization)"
+                  :indeterminate="isOrganizationPartiallySelected(organization)"
+                  :aria-label="`选择企业 ${organization.corpName}`"
+                  @click.stop
+                  @change="selectDirectoryOrganization(organization, Boolean($event))"
                 />
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-pagination v-model:current-page="directoryPageNum" v-model:page-size="directoryPageSize" :total="directoryTotal" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="loadDirectory" @size-change="directoryPageNum = 1; loadDirectory()" />
+                <button type="button" class="permission-corp-toggle" :data-corp-code="organization.corpCode" @click="toggleOrganizationTree(organization)">
+                  <span class="permission-corp-logo">{{ organization.corpName.slice(0, 1) }}</span>
+                  <strong>{{ organization.corpName }}</strong>
+                  <span class="permission-tree-arrow" :class="{ expanded: expandedDirectoryCorpCodes.includes(organization.corpCode) }">›</span>
+                </button>
+              </div>
+              <div v-if="expandedDirectoryCorpCodes.includes(organization.corpCode)" class="permission-department-tree">
+                <article v-for="department in organizationDepartments(organization)" :key="department.id" class="permission-department-node">
+                  <div class="permission-department-row">
+                    <el-checkbox
+                      :model-value="isDepartmentFullySelected(department.id)"
+                      :indeterminate="isDepartmentPartiallySelected(department)"
+                      :aria-label="`选择部门 ${department.departmentName}`"
+                      @change="selectDirectoryDepartment(department, Boolean($event))"
+                    />
+                    <button type="button" :data-department-id="department.id" @click="toggleDepartmentTree(department)">
+                      <span class="permission-tree-arrow" :class="{ expanded: expandedDirectoryDepartmentIds.includes(department.id) }">›</span>
+                      <span><strong>{{ department.departmentName }}</strong><small>{{ department.employeeCount }} 人</small></span>
+                    </button>
+                  </div>
+                  <div v-if="expandedDirectoryDepartmentIds.includes(department.id)" v-loading="departmentMemberPage(department).loading" class="permission-employee-tree">
+                    <div
+                      v-for="employee in departmentMemberPage(department).records"
+                      :key="employeeIdentityKey(employee)"
+                      class="permission-employee-row"
+                      :class="{ selected: isEmployeeSelected(employee) }"
+                      role="button"
+                      tabindex="0"
+                      @click="selectDirectoryEmployee(employee, !isEmployeeSelected(employee))"
+                      @keyup.enter="selectDirectoryEmployee(employee, !isEmployeeSelected(employee))"
+                    >
+                      <el-checkbox
+                        :model-value="isEmployeeSelected(employee)"
+                        :aria-label="`选择员工 ${employee.employeeName}`"
+                        @click.stop
+                        @change="selectDirectoryEmployee(employee, Boolean($event))"
+                      />
+                      <span class="permission-person-avatar">{{ employee.employeeName.slice(0, 1) }}</span>
+                      <span><strong>{{ employee.employeeName }}</strong><small>{{ employee.employeeNo }} · {{ employee.mobile }}</small></span>
+                    </div>
+                    <p v-if="departmentMemberPage(department).error" class="permission-empty">{{ departmentMemberPage(department).error }}</p>
+                  </div>
+                </article>
+              </div>
+            </article>
+            <p v-if="!directoryLoading && !directoryOrganizations.length" class="permission-empty">暂无可选企业通讯录</p>
+          </div>
         </section>
+
+        <aside class="permission-selected-pane" aria-label="已选择人员">
+          <header><strong>已选择</strong><span>（{{ selectedPermissionEmployees.length }}/5000）</span></header>
+          <div class="permission-selected-chips">
+            <span v-for="employee in selectedPermissionEmployees" :key="employeeIdentityKey(employee)" class="permission-selected-chip">
+              <span class="permission-person-avatar">{{ employee.employeeName.slice(0, 1) }}</span>
+              <span><strong>{{ employee.employeeName }}</strong></span>
+              <button type="button" :aria-label="`移除 ${employee.employeeName}`" @click="removeSelectedDirectoryEmployee(employee)">×</button>
+            </span>
+          </div>
+          <p v-if="!selectedPermissionEmployees.length" class="permission-selected-empty">从左侧选择部门或员工</p>
+        </aside>
       </section>
       <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" :loading="permissionSaving" @click="applyPermissionSelection">确定选择</el-button></template>
     </el-dialog>

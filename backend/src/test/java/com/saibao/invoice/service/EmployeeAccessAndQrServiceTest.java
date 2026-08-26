@@ -145,26 +145,7 @@ class EmployeeAccessAndQrServiceTest {
     }
 
     @Test
-    void departmentRuleShouldGrantAllMembersAndLegacyEmployeeDenyShouldNotOverrideIt() {
-        jdbcTemplate.update("DELETE FROM subject_permission WHERE subject_id = 1");
-        jdbcTemplate.update("""
-                INSERT INTO subject_permission
-                (subject_id, target_type, target_corp_code, target_id, target_name, permission_effect,
-                 status, source, created_by, updated_by, deleted)
-                VALUES
-                (1, 'DEPARTMENT', 'default', 'ding-dept-tech', '技术中心', 'ALLOW', 'ENABLED', 'MANUAL', 'admin', 'admin', 0),
-                (1, 'USER', 'default', 'ding-employee-001', '示例员工', 'DENY', 'ENABLED', 'MANUAL', 'admin', 'admin', 0),
-                (1, 'USER', 'default', 'ding-employee-003', '采购员工', 'ALLOW', 'ENABLED', 'MANUAL', 'admin', 'admin', 0)
-                """);
-
-        assertThat(totalFor(1L)).as("遗留员工拒绝规则不得覆盖已选择部门").isEqualTo(1);
-        assertThat(totalFor(4L)).as("同部门的所有员工都应可见").isEqualTo(1);
-        assertThat(totalFor(3L)).as("单独允许只授权该员工").isEqualTo(1);
-        assertThat(qrTokenService.create(1L, 1L).getToken()).isNotBlank();
-    }
-
-    @Test
-    void departmentEmployeeExclusionBlocksOnlyDepartmentGrantWhilePositiveArmsStillGrant() {
+    void exactUserAllowsShouldGrantOnlyTheSelectedEmployees() {
         jdbcTemplate.update("UPDATE invoice_subject SET all_employee_visible = 0 WHERE id = 1");
         jdbcTemplate.update("DELETE FROM subject_permission WHERE subject_id = 1");
         jdbcTemplate.update("DELETE FROM subject_department_employee_exclusion WHERE subject_id = 1");
@@ -172,36 +153,29 @@ class EmployeeAccessAndQrServiceTest {
                 INSERT INTO subject_permission
                 (subject_id, target_type, target_corp_code, target_id, target_name, permission_effect,
                  status, source, created_by, updated_by, deleted)
-                VALUES (1, 'DEPARTMENT', 'default', 'ding-dept-tech', '技术中心', 'ALLOW',
-                        'ENABLED', 'MANUAL', 'admin', 'admin', 0)
-                """);
-        jdbcTemplate.update("""
-                INSERT INTO subject_department_employee_exclusion
-                (subject_id, department_id, employee_id, created_by, updated_by)
-                VALUES (1, 1, 1, 'admin', 'admin')
+                VALUES
+                (1, 'USER', 'default', 'ding-employee-001', '示例员工', 'ALLOW', 'ENABLED', 'MANUAL', 'admin', 'admin', 0),
+                (1, 'USER', 'default', 'ding-employee-003', '采购员工', 'ALLOW', 'ENABLED', 'MANUAL', 'admin', 'admin', 0)
                 """);
         sqlSession.clearCache();
 
-        assertThat(totalFor(1L)).isZero();
-        assertThat(totalFor(4L)).as("同部门其他员工仍由部门正向授权").isEqualTo(1);
-        assertThatThrownBy(() -> qrTokenService.create(1L, 1L))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("没有该抬头的查看权限");
+        assertThat(totalFor(1L)).as("精确选择的员工应可见").isEqualTo(1);
+        assertThat(totalFor(3L)).as("另一个精确选择的员工应可见").isEqualTo(1);
+        assertThat(totalFor(4L)).as("同部门但未被精确选择的员工不可见").isZero();
+        assertThat(qrTokenService.create(1L, 1L).getToken()).isNotBlank();
+    }
 
-        jdbcTemplate.update("""
-                INSERT INTO subject_permission
-                (subject_id, target_type, target_corp_code, target_id, target_name, permission_effect,
-                 status, source, created_by, updated_by, deleted)
-                VALUES (1, 'USER', 'default', 'ding-employee-001', '示例员工', 'ALLOW',
-                        'ENABLED', 'MANUAL', 'admin', 'admin', 0)
-                """);
-        sqlSession.clearCache();
-        assertThat(totalFor(1L)).as("员工 ALLOW 仍是独立正向授权路径").isEqualTo(1);
-
-        jdbcTemplate.update("DELETE FROM subject_permission WHERE subject_id = 1 AND target_type = 'USER'");
+    @Test
+    void allEmployeeVisibilityShouldGrantEveryoneWithoutPartialRules() {
         jdbcTemplate.update("UPDATE invoice_subject SET all_employee_visible = 1 WHERE id = 1");
+        jdbcTemplate.update("DELETE FROM subject_permission WHERE subject_id = 1");
+        jdbcTemplate.update("DELETE FROM subject_department_employee_exclusion WHERE subject_id = 1");
         sqlSession.clearCache();
-        assertThat(totalFor(1L)).as("全员可见仍是独立正向授权路径").isEqualTo(1);
+
+        assertThat(totalFor(1L)).isEqualTo(1);
+        assertThat(totalFor(3L)).isEqualTo(1);
+        assertThat(totalFor(4L)).isEqualTo(1);
+        assertThat(qrTokenService.create(1L, 1L).getToken()).isNotBlank();
     }
 
     @Test

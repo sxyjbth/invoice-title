@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.saibao.invoice.mapper.DingDirectoryMapper">
-    <!-- 最终权限采用正向授权并集：全员可见、个人启用或任一部门启用命中即为可见。 -->
+    <!-- 最终权限仅由全员可见或精确的个人允许授权决定。 -->
     <sql id="effectiveEmployeePermission">
         CASE
             WHEN EXISTS (
@@ -16,27 +16,6 @@
             WHEN EXISTS (
                 SELECT 1 FROM invoice_subject s
                 WHERE s.id = #{subjectId} AND s.all_employee_visible = 1 AND s.deleted = 0
-            ) THEN 1
-            WHEN EXISTS (
-                SELECT 1 FROM ding_employee_department employee_department
-                INNER JOIN ding_department employee_department_directory
-                  ON employee_department_directory.id = employee_department.department_id
-                 AND employee_department_directory.status = 'ENABLED'
-                INNER JOIN subject_permission department_allow
-                  ON department_allow.target_corp_code = employee_department_directory.corp_code
-                 AND department_allow.target_id = employee_department_directory.ding_department_id
-                WHERE employee_department.employee_id = e.id
-                  AND department_allow.subject_id = #{subjectId}
-                  AND department_allow.target_type = 'DEPARTMENT'
-                  AND department_allow.permission_effect = 'ALLOW'
-                  AND department_allow.status = 'ENABLED' AND department_allow.deleted = 0
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM subject_department_employee_exclusion department_exclusion
-                      WHERE department_exclusion.subject_id = #{subjectId}
-                        AND department_exclusion.department_id = employee_department.department_id
-                        AND department_exclusion.employee_id = e.id
-                  )
             ) THEN 1
             ELSE 0
         END
@@ -151,6 +130,10 @@
         SELECT DISTINCT e.id
         FROM ding_employee e
         INNER JOIN ding_employee_department ed ON ed.employee_id = e.id
+        INNER JOIN ding_department d
+          ON d.id = ed.department_id
+         AND d.status = 'ENABLED'
+         AND d.corp_code = e.corp_code
         WHERE e.status = 'ACTIVE' AND ed.department_id IN
         <foreach collection="departmentIds" item="departmentId" open="(" separator="," close=")">
             #{departmentId}
