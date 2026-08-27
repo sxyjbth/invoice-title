@@ -509,6 +509,12 @@ const selectedPermissionEmployees = computed<DingEmployee[]>(() => {
     return corpCompare || left.employeeName.localeCompare(right.employeeName, "zh-CN");
   });
 });
+const waldenSelectedPermissionEmployees = computed<DingEmployee[]>(() => selectedPermissionEmployees.value.filter(
+  (employee) => employee.corpCode === "walden",
+));
+const seboSelectedPermissionEmployees = computed<DingEmployee[]>(() => selectedPermissionEmployees.value.filter(
+  (employee) => employee.corpCode !== "walden",
+));
 watch(activeMenu, (menu) => {
   if (!currentUser.value) return;
   if (menu === "accounts") void loadFinanceAccounts();
@@ -2244,14 +2250,30 @@ provide(financeLayoutKey, {
 
         <aside class="permission-selected-pane" aria-label="已选择人员">
           <header><strong>已选择</strong><span>（{{ selectedPermissionEmployees.length }}/5000）</span></header>
-          <div class="permission-selected-chips">
-            <span v-for="employee in selectedPermissionEmployees" :key="employeeIdentityKey(employee)" class="permission-selected-chip">
-              <span class="permission-person-avatar">{{ employee.employeeName.slice(0, 1) }}</span>
-              <span><strong>{{ employee.employeeName }}</strong></span>
-              <button type="button" :aria-label="`移除 ${employee.employeeName}`" @click="removeSelectedDirectoryEmployee(employee)">×</button>
-            </span>
+          <div class="permission-selected-groups">
+            <section class="permission-selected-corporation" aria-label="瓦尔登已选择人员">
+              <header><strong>瓦尔登</strong><span>{{ waldenSelectedPermissionEmployees.length }} 人</span></header>
+              <div v-if="waldenSelectedPermissionEmployees.length" class="permission-selected-chips">
+                <span v-for="employee in waldenSelectedPermissionEmployees" :key="employeeIdentityKey(employee)" class="permission-selected-chip">
+                  <span class="permission-person-avatar">{{ employee.employeeName.slice(0, 1) }}</span>
+                  <span><strong>{{ employee.employeeName }}</strong></span>
+                  <button type="button" :aria-label="`移除 ${employee.employeeName}`" @click="removeSelectedDirectoryEmployee(employee)">×</button>
+                </span>
+              </div>
+              <p v-else class="permission-selected-empty">暂无已选人员</p>
+            </section>
+            <section class="permission-selected-corporation" aria-label="赛宝已选择人员">
+              <header><strong>赛宝</strong><span>{{ seboSelectedPermissionEmployees.length }} 人</span></header>
+              <div v-if="seboSelectedPermissionEmployees.length" class="permission-selected-chips">
+                <span v-for="employee in seboSelectedPermissionEmployees" :key="employeeIdentityKey(employee)" class="permission-selected-chip">
+                  <span class="permission-person-avatar">{{ employee.employeeName.slice(0, 1) }}</span>
+                  <span><strong>{{ employee.employeeName }}</strong></span>
+                  <button type="button" :aria-label="`移除 ${employee.employeeName}`" @click="removeSelectedDirectoryEmployee(employee)">×</button>
+                </span>
+              </div>
+              <p v-else class="permission-selected-empty">暂无已选人员</p>
+            </section>
           </div>
-          <p v-if="!selectedPermissionEmployees.length" class="permission-selected-empty">从左侧选择部门或员工</p>
         </aside>
       </section>
       <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" :loading="permissionSaving" @click="applyPermissionSelection">确定选择</el-button></template>

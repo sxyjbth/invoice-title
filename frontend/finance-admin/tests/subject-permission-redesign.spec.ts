@@ -351,6 +351,37 @@ describe("主体权限双企业可见范围重设计（红灯契约）", () => {
     wrapper.unmount();
   });
 
+  it("编辑器右侧已选择人员按瓦尔登在上赛宝在下分区展示", async () => {
+    mockDualEnterpriseDirectory();
+    const wrapper = await mountPermissionPage();
+    const vm = layoutVm(wrapper);
+    vm.permissionProfiles[0].departments = [];
+    vm.permissionProfiles[0].employeeRules = [];
+    const dialog = await openPermissionEditor(wrapper);
+
+    await expandOrganization(dialog, "sebo");
+    await expandDepartment(dialog, 11);
+    employeeRow(dialog, "孙鑫尧").click();
+    await nextTick();
+
+    await expandOrganization(dialog, "walden");
+    await expandDepartment(dialog, 21);
+    employeeRow(dialog, "王月").click();
+    await nextTick();
+
+    const selectedPane = dialog.querySelector<HTMLElement>('[aria-label="已选择人员"]')!;
+    const corporationSections = selectedPane.querySelectorAll<HTMLElement>(".permission-selected-corporation");
+    expect(corporationSections).toHaveLength(2);
+    expect(corporationSections[0].getAttribute("aria-label")).toBe("瓦尔登已选择人员");
+    expect(corporationSections[1].getAttribute("aria-label")).toBe("赛宝已选择人员");
+    expect(selectedEmployeeNames(corporationSections[0])).toEqual(["王月"]);
+    expect(selectedEmployeeNames(corporationSections[1])).toEqual(["孙鑫尧"]);
+    expect(adminStyles).toMatch(/\.permission-selected-groups\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/s);
+    expect(adminStyles).toMatch(/\.permission-selected-corporation\s+\.permission-selected-chips\s*\{[^}]*overflow-y:\s*auto/s);
+
+    wrapper.unmount();
+  });
+
   it("企业节点提供前置复选框并可一次选择该企业全部员工", async () => {
     mockDualEnterpriseDirectory();
     const wrapper = await mountPermissionPage();
