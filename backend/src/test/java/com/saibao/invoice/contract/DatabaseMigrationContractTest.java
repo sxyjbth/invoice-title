@@ -189,6 +189,8 @@ class DatabaseMigrationContractTest {
         String sql = Files.readString(migration, StandardCharsets.UTF_8);
         assertThat(sql)
                 .contains("CREATE TEMPORARY TABLE tmp_v111_department_scope")
+                .contains("target_corp_code VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL")
+                .contains(") ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci COMMENT='V111 有效部门允许规则解析后的部门范围临时表'")
                 .contains("CREATE TEMPORARY TABLE tmp_v111_unresolved_department_rule")
                 .contains("CREATE TEMPORARY TABLE tmp_v111_resolution_guard")
                 .contains("INSERT INTO tmp_v111_unresolved_department_rule")

@@ -13,11 +13,11 @@ CREATE TEMPORARY TABLE tmp_v111_migrated_subject (
 
 CREATE TEMPORARY TABLE tmp_v111_department_scope (
     subject_id BIGINT UNSIGNED NOT NULL COMMENT '展示主体主键 ID',
-    target_corp_code VARCHAR(50) NOT NULL COMMENT '钉钉企业业务编码；与 ding_user_id 共同确定员工身份',
+    target_corp_code VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '钉钉企业业务编码；与 ding_user_id 共同确定员工身份',
     department_id BIGINT UNSIGNED NOT NULL COMMENT '本地钉钉部门目录主键 ID；用于匹配员工部门关系及旧例外记录',
     PRIMARY KEY (subject_id, department_id),
     KEY idx_tmp_v111_department_scope_corp (target_corp_code, department_id)
-) ENGINE=InnoDB COMMENT='V111 有效部门允许规则解析后的部门范围临时表';
+) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci COMMENT='V111 有效部门允许规则解析后的部门范围临时表';
 
 CREATE TEMPORARY TABLE tmp_v111_unresolved_department_rule (
     permission_id BIGINT UNSIGNED NOT NULL COMMENT '无法解析为当前有效目录部门的旧部门权限主键 ID',
