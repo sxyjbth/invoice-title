@@ -704,6 +704,58 @@ describe("主体权限双企业可见范围重设计（红灯契约）", () => {
     wrapper.unmount();
   });
 
+  it("取消编辑时丢弃未确认的员工勾选", async () => {
+    mockDualEnterpriseDirectory();
+    const wrapper = await mountPermissionPage();
+    const vm = layoutVm(wrapper);
+    vm.permissionProfiles[0].departments = [];
+    vm.permissionProfiles[0].employeeRules = [];
+    const dialog = await openPermissionEditor(wrapper);
+
+    await expandOrganization(dialog, "sebo");
+    await expandDepartment(dialog, 11);
+    employeeRow(dialog, "孙鑫尧").click();
+    await nextTick();
+    expect(selectedEmployeeNames(dialog)).toContain("孙鑫尧");
+
+    const cancel = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "取消");
+    expect(cancel).toBeDefined();
+    cancel!.click();
+    await nextTick();
+
+    expect(vm.permissionDialogVisible).toBe(false);
+    expect(wrapper.get('[aria-label="赛宝已选人员"]').text()).not.toContain("孙鑫尧");
+
+    wrapper.unmount();
+  });
+
+  it("关闭编辑弹窗时丢弃未确认的员工勾选", async () => {
+    mockDualEnterpriseDirectory();
+    const wrapper = await mountPermissionPage();
+    const vm = layoutVm(wrapper);
+    vm.permissionProfiles[0].departments = [];
+    vm.permissionProfiles[0].employeeRules = [];
+    const dialog = await openPermissionEditor(wrapper);
+
+    await expandOrganization(dialog, "sebo");
+    await expandDepartment(dialog, 11);
+    employeeRow(dialog, "孙鑫尧").click();
+    await nextTick();
+    expect(selectedEmployeeNames(dialog)).toContain("孙鑫尧");
+
+    const close = dialog.querySelector<HTMLButtonElement>('[aria-label="关闭此对话框"]');
+    expect(close).not.toBeNull();
+    await new DOMWrapper(close!).trigger("click");
+    await nextTick();
+
+    expect(dialog.closest<HTMLElement>(".el-overlay")?.style.display).toBe("none");
+    expect(vm.permissionDialogVisible).toBe(false);
+    expect(wrapper.get('[aria-label="赛宝已选人员"]').text()).not.toContain("孙鑫尧");
+
+    wrapper.unmount();
+  });
+
   it("确定选择只保存并保持弹窗，只有取消或关闭按钮才退出", async () => {
     const request = mockDualEnterpriseDirectory();
     const wrapper = await mountPermissionPage();

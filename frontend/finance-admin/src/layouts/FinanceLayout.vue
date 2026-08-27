@@ -1752,10 +1752,34 @@ async function loadDirectory() {
 }
 
 function resetPermissionEmployeeState() {
-  Object.keys(employeeEnabledDraft).forEach((key) => delete employeeEnabledDraft[key]);
-  Object.keys(employeePermissionEdited).forEach((key) => delete employeePermissionEdited[key]);
+  resetPermissionEmployeeDraftState();
   Object.keys(loadedDirectoryEmployees).forEach((key) => delete loadedDirectoryEmployees[key]);
   Object.keys(loadedEmployeeDepartmentIds).forEach((key) => delete loadedEmployeeDepartmentIds[key]);
+}
+
+function resetPermissionEmployeeDraftState() {
+  Object.keys(employeeEnabledDraft).forEach((key) => delete employeeEnabledDraft[key]);
+  Object.keys(employeePermissionEdited).forEach((key) => delete employeePermissionEdited[key]);
+}
+
+function restorePermissionSelectionDraft() {
+  const profile = activePermissionProfile.value;
+  selectedDepartmentIds.value = profile?.departments.map((department) => department.id) ?? [];
+  revokedDepartmentIds.value = [];
+  reenabledEmployeeIds.value = [];
+  departmentExcludedEmployeeIds.value = [...(profile?.departmentExcludedEmployeeIds ?? [])];
+  partiallySelectedDepartmentIds.value = [...(profile?.partiallySelectedDepartmentIds ?? [])];
+  resetPermissionEmployeeDraftState();
+}
+
+function discardPermissionSelection() {
+  restorePermissionSelectionDraft();
+  permissionDialogVisible.value = false;
+}
+
+function beforeClosePermissionEditor(done: () => void) {
+  discardPermissionSelection();
+  done();
 }
 
 async function hydratePermissionProfileMembers(profile: SubjectPermissionProfile) {
@@ -2131,6 +2155,8 @@ provide(financeLayoutKey, {
       aria-label="编辑可见范围"
       :close-on-click-modal="false"
       :close-on-press-escape="false"
+      :before-close="beforeClosePermissionEditor"
+      @close="restorePermissionSelectionDraft"
     >
       <section class="permission-scope-editor" aria-label="编辑可见范围">
         <section class="permission-directory-pane" aria-label="企业部门员工选择树">
@@ -2276,7 +2302,7 @@ provide(financeLayoutKey, {
           </div>
         </aside>
       </section>
-      <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" :loading="permissionSaving" @click="applyPermissionSelection">确定选择</el-button></template>
+      <template #footer><el-button @click="discardPermissionSelection">取消</el-button><el-button type="primary" :loading="permissionSaving" @click="applyPermissionSelection">确定选择</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="titleBindingVisible" :title="bindingSubject ? `为${bindingSubject.name}绑定抬头` : '绑定抬头'" width="560px">
