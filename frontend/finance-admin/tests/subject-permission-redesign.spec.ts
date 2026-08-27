@@ -376,8 +376,9 @@ describe("主体权限双企业可见范围重设计（红灯契约）", () => {
     expect(corporationSections[1].getAttribute("aria-label")).toBe("赛宝已选择人员");
     expect(selectedEmployeeNames(corporationSections[0])).toEqual(["王月"]);
     expect(selectedEmployeeNames(corporationSections[1])).toEqual(["孙鑫尧"]);
+    expect(selectedPane.querySelectorAll("details.permission-selected-corporation")).toHaveLength(0);
     expect(adminStyles).toMatch(/\.permission-selected-groups\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/s);
-    expect(adminStyles).toMatch(/\.permission-selected-corporation\s+\.permission-selected-chips\s*\{[^}]*overflow-y:\s*auto/s);
+    expect(adminStyles).toMatch(/\.permission-selected-corporation\s+\.permission-selected-chips\s*\{[^}]*overflow-y:\s*auto[^}]*overscroll-behavior-y:\s*contain/s);
 
     wrapper.unmount();
   });

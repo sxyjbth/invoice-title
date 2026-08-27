@@ -256,7 +256,7 @@ button:focus-visible { outline: 3px solid rgba(22,119,255,.24); outline-offset: 
 .permission-selected-corporation > header strong { font-size: 14px; }
 .permission-selected-corporation > header span { color: #8b96a9; font-size: 12px; }
 .permission-selected-chips { display: flex; max-height: 470px; flex-wrap: wrap; align-content: flex-start; gap: 10px; overflow: auto; }
-.permission-selected-corporation .permission-selected-chips { min-height: 0; flex: 1; max-height: none; overflow-y: auto; }
+.permission-selected-corporation .permission-selected-chips { min-height: 0; flex: 1; max-height: none; overflow-y: auto; overscroll-behavior-y: contain; }
 .permission-selected-chip { display: grid; max-width: 100%; grid-template-columns: 30px minmax(0, 1fr) 20px; align-items: center; gap: 7px; padding: 6px 7px; border-radius: 10px; color: #344054; background: #f2f4f7; }
 .permission-selected-chip .permission-person-avatar { width: 30px; height: 30px; background: #fff; }
 .permission-selected-chip strong, .permission-selected-chip small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
