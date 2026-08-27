@@ -29,7 +29,7 @@ function layoutVm(wrapper: Awaited<ReturnType<typeof mountPermissionPage>>) {
   return wrapper.getComponent(FinanceLayout).vm as any;
 }
 
-function mockDualEnterpriseDirectory() {
+function mockDualEnterpriseDirectory(requests: Array<{ url: string; method: string; body?: unknown }> = []) {
   const organizations = [
     { corpCode: "sebo", corpName: "赛宝绿创能源技术（上海）有限公司" },
     { corpCode: "walden", corpName: "瓦尔登环境科学研究院（北京）有限公司" },
@@ -88,8 +88,14 @@ function mockDualEnterpriseDirectory() {
     },
   ];
 
-  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = new URL(String(input), "http://localhost");
+    const method = init?.method ?? "GET";
+    requests.push({
+      url: `${url.pathname}${url.search}`,
+      method,
+      body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+    });
     const json = (value: unknown) => new Response(JSON.stringify(value), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -108,6 +114,18 @@ function mockDualEnterpriseDirectory() {
         && (!keyword || [employee.employeeName, employee.employeeNo, employee.departmentName, employee.mobile]
           .some((value) => value.includes(keyword))));
       return json({ records, total: records.length });
+    }
+    if (url.pathname.endsWith("/directory/employee-selections/resolve")) {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+      const selectedEmployees = employees
+        .filter((employee) => !body.corpCodes?.length || body.corpCodes.includes(employee.corpCode))
+        .map((employee) => ({ ...employee, departmentIds: [employee.departmentId] }));
+      return json({
+        selectedEmployeeCount: selectedEmployees.length,
+        selectedEmployeeIds: selectedEmployees.map((employee) => employee.id),
+        selectedEmployees,
+        employeeGroups: [],
+      });
     }
     return json({});
   });
@@ -347,6 +365,32 @@ describe("主体权限双企业可见范围重设计（红灯契约）", () => {
     checkbox.click();
     await flushPromises();
 
+    expect(selectedEmployeeNames(dialog).sort()).toEqual(["孙鑫尧", "李晨"].sort());
+
+    wrapper.unmount();
+  });
+
+  it("企业全选只发起一次批量解析请求且不再逐部门加载员工", async () => {
+    const requests: Array<{ url: string; method: string; body?: unknown }> = [];
+    mockDualEnterpriseDirectory(requests);
+    const wrapper = await mountPermissionPage();
+    const vm = layoutVm(wrapper);
+    vm.permissionProfiles[0].departments = [];
+    vm.permissionProfiles[0].employeeRules = [];
+    const dialog = await openPermissionEditor(wrapper);
+    requests.length = 0;
+
+    corporationCheckbox(dialog, "赛宝绿创能源技术（上海）有限公司").click();
+    await flushPromises();
+
+    const batchRequests = requests.filter((request) => request.url.endsWith("/directory/employee-selections/resolve"));
+    const memberPageRequests = requests.filter((request) => request.url.includes("/directory/employees?"));
+    expect(batchRequests).toHaveLength(1);
+    expect(batchRequests[0]).toMatchObject({
+      method: "POST",
+      body: { corpCodes: ["sebo"], departmentIds: [], employeeIds: [] },
+    });
+    expect(memberPageRequests).toHaveLength(0);
     expect(selectedEmployeeNames(dialog).sort()).toEqual(["孙鑫尧", "李晨"].sort());
 
     wrapper.unmount();

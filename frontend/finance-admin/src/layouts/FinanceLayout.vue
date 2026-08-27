@@ -114,6 +114,13 @@ type DingEmployee = {
   permissionEnabled?: boolean;
 };
 
+type EmployeeSelectionResolveResult = {
+  selectedEmployeeCount: number;
+  selectedEmployeeIds: number[];
+  selectedEmployees: DingEmployee[];
+  employeeGroups?: unknown[];
+};
+
 type DepartmentMemberPage = {
   departmentId: number;
   records: DingEmployee[];
@@ -1205,11 +1212,94 @@ async function selectDirectoryOrganization(organization: DingOrganization, selec
   try {
     await loadOrganizationDepartments(organization);
     const departments = organizationDepartments(organization);
-    await Promise.all(departments.map((department) => loadAllDepartmentMembers(department)));
-    departments.forEach((department) => toggleDepartmentSelection(department.id, selected));
+    const result = await resolveDirectoryEmployeeSelection({ corpCodes: [organization.corpCode] });
+    applyOrganizationSelection(departments, result.selectedEmployees ?? [], selected);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "企业通讯录加载失败");
   }
+}
+
+/**
+ * 企业、部门或员工批量选择统一交给后端一次性解析，避免企业全选时逐部门分页拉取成员。
+ */
+async function resolveDirectoryEmployeeSelection(input: {
+  corpCodes?: string[];
+  departmentIds?: number[];
+  employeeIds?: number[];
+}): Promise<EmployeeSelectionResolveResult> {
+  const request = {
+    corpCodes: input.corpCodes ?? [],
+    departmentIds: input.departmentIds ?? [],
+    employeeIds: input.employeeIds ?? [],
+  };
+  if (permissionPreviewMode) {
+    const corpCodes = new Set(request.corpCodes);
+    const departmentIds = new Set(request.departmentIds);
+    const employeeIds = new Set(request.employeeIds);
+    const selectedEmployees = cloneTestDirectoryEmployees(testDirectoryEmployees.filter((employee) => {
+      const memberships = [employee.departmentId, ...(employee.departmentIds ?? [])];
+      return (!corpCodes.size || corpCodes.has(employee.corpCode ?? "default"))
+        && (!departmentIds.size || memberships.some((departmentId) => departmentIds.has(departmentId)))
+        && (!employeeIds.size || employeeIds.has(employee.id));
+    }));
+    return {
+      selectedEmployeeCount: selectedEmployees.length,
+      selectedEmployeeIds: selectedEmployees.map((employee) => employee.id),
+      selectedEmployees,
+      employeeGroups: [],
+    };
+  }
+  const response = await fetch("/api/admin/directory/employee-selections/resolve", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  return readApi<EmployeeSelectionResolveResult>(response, "企业通讯录加载失败");
+}
+
+/**
+ * 将企业选择结果集中写入响应式状态，避免每个部门、每名员工触发一次数组替换和界面重算。
+ */
+function applyOrganizationSelection(
+  departments: DingDepartment[],
+  employees: DingEmployee[],
+  selected: boolean,
+) {
+  const selectedIds = new Set(selectedDepartmentIds.value);
+  const revokedIds = new Set(revokedDepartmentIds.value);
+  const partialIds = new Set(partiallySelectedDepartmentIds.value);
+  departments.forEach((department) => {
+    if (selected) {
+      selectedIds.add(department.id);
+      revokedIds.delete(department.id);
+    } else {
+      selectedIds.delete(department.id);
+      revokedIds.add(department.id);
+    }
+    partialIds.delete(department.id);
+  });
+
+  const excludedEmployeeIds = new Set(departmentExcludedEmployeeIds.value);
+  const reenabledIds = new Set(reenabledEmployeeIds.value);
+  employees.forEach((employee) => {
+    hydrateDirectoryEmployee(employee);
+    const employeeKey = employeeIdentityKey(employee);
+    employeeEnabledDraft[employeeKey] = selected;
+    employeePermissionEdited[employeeKey] = true;
+    reenabledIds.delete(employee.id);
+    if (selected || !employeeDepartmentIds(employee).some((departmentId) => selectedIds.has(departmentId))) {
+      excludedEmployeeIds.delete(employee.id);
+    } else {
+      excludedEmployeeIds.add(employee.id);
+    }
+  });
+
+  selectedDepartmentIds.value = [...selectedIds];
+  revokedDepartmentIds.value = [...revokedIds];
+  partiallySelectedDepartmentIds.value = [...partialIds];
+  departmentExcludedEmployeeIds.value = [...excludedEmployeeIds];
+  reenabledEmployeeIds.value = [...reenabledIds];
 }
 
 async function loadAllDepartmentMembers(department: DingDepartment) {
